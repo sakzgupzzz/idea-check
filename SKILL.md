@@ -1,0 +1,204 @@
+---
+name: idea-check
+description: Validate a product or startup idea end to end and return a research-backed landscape report covering prior art, adjacent incumbents, the graveyard of failed attempts, buyer economics, and the commodity floor. Use this whenever the user asks whether an idea already exists, whether an idea is taken, whether an idea will work, whether anyone has built something, or asks for competitive, prior-art, or market landscape research on something they are thinking of building. Trigger even if they phrase it casually ("has anyone done X", "is this a thing", "am I crazy or is there a market for X") and even if they only describe the idea without asking a question.
+---
+
+# idea-check
+
+Research an idea end to end and return a landscape report. Do not return a
+verdict on whether the idea will work. Return evidence, and the conditions
+under which the idea survives.
+
+## Before launching
+
+Restate the idea in one paragraph as you understood it, and tell the user
+you are starting research. Do not wait for confirmation; the restatement
+goes in the report too, so the user can catch a misread either way. Ask one
+question first only if the ambiguity changes which market you would research
+(for example "AI for lawyers" could mean contract review or litigation
+discovery, and those have different incumbents and graveyards).
+
+Pick the entity type: software product, hardware product, service, research
+direction, or content. This changes which sources matter. Software leans on
+package registries and GitHub; hardware leans on patents; services lean on
+local market and labor data; research leans on papers and preprints.
+
+Then check prior runs. List `checks/` in the skill directory and read the
+front matter of any file whose subject looks related. If a previous check
+covers overlapping ground, say so up front and name the file, then decide
+with the user whether to run fresh research or extend the earlier report.
+Repeating a check you already ran is the most common waste in this workflow.
+
+Create a notes directory in the scratchpad for this run. Each thread writes
+its findings there so the synthesis works from files, not from memory of
+four long subagent replies.
+
+## The four threads
+
+Launch all four as parallel subagents in a single message, using the Agent
+tool with the general-purpose type. Each thread needs web search and fetch.
+The decomposition is fixed. Do not substitute your own, merge threads, or
+add a fifth. The full prompt for each thread is in
+`references/thread-prompts.md`; read that file and use the templates as
+written, substituting the idea, entity type, and notes path.
+
+### 1. Prior art
+Who already ships this. Commercial products with pricing where published,
+GitHub repos with stars, license and last commit date, academic work,
+patents. For each occupant, state how close it is to the idea and what it
+does not cover. The gaps are more useful than the list.
+
+### 2. Adjacent incumbents
+Which established categories already solve this as a feature, and who would
+absorb it if it worked. This matters more than direct competitors. Products
+in this space more often die to an incumbent bundling the feature from above
+than to a startup competing head on. Name the most likely absorber.
+
+### 3. Graveyard and economics
+What has already been tried here and failed: shutdowns, acquisitions at low
+value, pivots, layoffs, decline in adjacent public companies. Then who the
+buyer is, what they actually pay, and whether that segment can pay at all.
+Be adversarial toward the business case. A thread briefed to find
+competitors will never find the graveyard, which is why this is separate.
+
+### 4. Commodity floor
+How much of this is already free or bundled: frontier model capabilities,
+open source, features inside subscriptions the user already has. If a
+competent model with web search does 80 percent of it for free, say so and
+name the remaining delta, because the delta is the only thing sellable.
+
+## Mandatory subagent instructions
+
+Every thread prompt must include this block verbatim. It is already in the
+templates; do not trim it when substituting.
+
+- "Assume prior art exists and hunt for it. Your job is to find who
+  occupies this space, not to confirm it is empty. Report who occupies
+  this space, bluntly."
+- "Where you find nothing, write 'found nothing, which is not the same as
+  absent' and list what you did not check."
+- "Every factual claim needs a source URL."
+- "Exclude AI-generated listicles, 'best tools 2026' roundup pages,
+  programmatic pricing sites, and syndicated market-sizing sellers from all
+  factual claims. Name the sources you discarded. Roughly a third of search
+  results in this domain are vendors writing SEO about each other; report
+  that volume as a finding, but do not cite it."
+- "Distinguish vendor claims from independent evidence in every finding."
+
+The first line is the highest-value line in this skill. Framing a research
+task toward confirmation rather than falsification shifts conclusions by 34
+to 66 percentage points in published measurements. That makes the framing a
+correctness requirement, not a tone preference. A thread told to check
+whether a space is empty will report it empty.
+
+The "found nothing" phrase exists because absence of evidence is weak here.
+Small competitors and dead companies are both poorly indexed. Listing what
+was not checked lets the reader judge how much the silence means.
+
+## Synthesis
+
+When all four threads return, read their notes files. Then do two things.
+
+### Three independent landscape reads
+
+Label the landscape Open, Crowded, or Saturated. Produce that label three
+times independently, and keep the reads actually independent: launch three
+parallel subagents, each given only the four notes files and the label
+definitions below, each asked for one label and at most three sentences of
+reasoning. Do not give them each other's output or your own draft. Do not
+produce the label yourself in your own context and then "re-derive" it,
+because a second read in the same context is anchored on the first.
+
+Definitions to pass to each reader:
+- Open: no occupant covers the core of the idea; the commodity floor leaves
+  a real delta; the graveyard is empty or failed for reasons that no longer
+  hold.
+- Crowded: several occupants cover most of it; a wedge exists but incumbents
+  are close; the economics are plausible for a narrowed segment.
+- Saturated: direct occupants with published pricing, an incumbent already
+  bundling it, or a graveyard showing the segment cannot pay.
+
+Report all three labels and show any disagreement. Do not average, and do
+not pick a winner by majority in the prose; let the reader see the split.
+Benchmarked novelty verdicts swing from 93.5 to 40.9 percent accuracy on
+prompt rewording alone, and a three-call vote outperformed purpose-built
+single-pass tools costing twelve times more. Disagreement between the reads
+is the single most informative line in the report.
+
+### No critic layer
+
+Do not add a critic, red-team, or debate agent over the synthesis. Published
+results show multi-agent debate underperforms a single strong pass and
+degrades accuracy in most configurations tested. One careful synthesis from
+the notes files beats a committee.
+
+## Output
+
+Three destinations, in this order. The file is the deliverable; the
+conversation gets a summary only.
+
+### 1. The report file, always
+
+Write the full report to `checks/YYYY-MM-DD-<slug>.md` in the skill
+directory, where `<slug>` is a short kebab-case name for the idea. Create
+`checks/` if it does not exist. Begin the file with YAML front matter so
+later runs can match against it without reading the whole report:
+
+```yaml
+---
+idea: one-line statement of the idea
+slug: kebab-case-name
+date: YYYY-MM-DD
+label: Open | Crowded | Saturated
+label_reads: [read1, read2, read3]
+top_occupants: [name1, name2, name3]
+---
+```
+
+When the three reads disagree, set `label` to the one that appears most
+often, or to `Split` if all three differ. The front matter is a lookup key;
+the body is where the disagreement is shown.
+
+Body: markdown, under 1,200 words. Prose by default, tables only where
+comparison is genuinely needed (for example several occupants with
+pricing). No em dashes. Sections in this order, with these headings:
+
+1. **The idea, as understood.** One paragraph. The user checks this first.
+2. **Who is already there.** Named, with URLs, pricing where published,
+   and how close each is to the idea. Mark vendor claims as such.
+3. **The graveyard.** What failed and why.
+4. **The economics.** Who pays, how much, and whether the segment can pay.
+5. **The commodity floor.** What is already free or bundled.
+6. **Landscape label.** All three reads, with any disagreement shown.
+7. **What would have to be true.** The specific conditions under which the
+   idea survives, and for each, what evidence would settle it. Mark any
+   condition the research already falsified.
+8. **Sources, and sources discarded.** Every cited URL, then the discarded
+   sources from all four threads with a one-phrase reason each.
+
+### 2. The conversation summary, always
+
+Print at most 150 words: the landscape label and whether the three reads
+agreed, the two or three closest occupants, the single most decisive
+finding, and the path to the report file. Nobody reads 1,200 words in a
+terminal.
+
+### 3. A shareable page, only if available
+
+If a tool for publishing an artifact or page exists in the session, also
+publish the report as a page and give the user the link. Treat this as
+optional. Never fail the run, and never withhold the file or the summary,
+because this tool is absent. It is absent in many Claude Code sessions,
+which is where this skill is usually installed.
+
+## Known limits
+
+State these in the report when they apply.
+
+- Absence of evidence is weak evidence here. Small competitors and dead
+  companies are both poorly indexed.
+- Pricing for enterprise tools is usually sales-gated and unavailable.
+- Volume of search results is not evidence of market size; much of it is
+  vendors writing about each other.
+- The report says whether a space is occupied. It does not say whether this
+  user can win, which depends on information the research cannot see.
