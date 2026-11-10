@@ -28,6 +28,8 @@ front matter of any file whose subject looks related. If a previous check
 covers overlapping ground, say so up front and name the file, then decide
 with the user whether to run fresh research or extend the earlier report.
 Repeating a check you already ran is the most common waste in this workflow.
+(`examples/` holds published sample reports, not the user's own checks; do
+not match against it.)
 
 Create a notes directory in the scratchpad for this run. Each thread writes
 its findings there so the synthesis works from files, not from memory of
@@ -38,9 +40,14 @@ four long subagent replies.
 Launch all four as parallel subagents in a single message, using the Agent
 tool with the general-purpose type. Each thread needs web search and fetch.
 The decomposition is fixed. Do not substitute your own, merge threads, or
-add a fifth. The full prompt for each thread is in
-`references/thread-prompts.md`; read that file and use the templates as
-written, substituting the idea, entity type, and notes path.
+add a fifth.
+
+Every prompt this skill sends is in `references/thread-prompts.md`. Read
+that file now and use its fenced blocks as written. A research prompt is
+the thread's template, then the "Shared block", then "Output instruction:
+skill", with the idea, entity type, notes directory and filename
+substituted. The summaries below say what each thread is for; they are not
+the prompts.
 
 ### 1. Prior art
 Who already ships this. Commercial products with pricing where published,
@@ -69,23 +76,15 @@ name the remaining delta, because the delta is the only thing sellable.
 
 ## Mandatory subagent instructions
 
-Every thread prompt must include this block verbatim. It is already in the
-templates; do not trim it when substituting.
+Every thread prompt must include the "Shared block" from
+`references/thread-prompts.md` verbatim. Do not trim, paraphrase or reorder
+it when assembling a prompt. It tells each thread to assume prior art
+exists and hunt for it, to write "found nothing, which is not the same as
+absent" and list what it did not check, to give a source URL for every
+claim, to exclude and name SEO-grade sources, and to separate vendor claims
+from independent evidence.
 
-- "Assume prior art exists and hunt for it. Your job is to find who
-  occupies this space, not to confirm it is empty. Report who occupies
-  this space, bluntly."
-- "Where you find nothing, write 'found nothing, which is not the same as
-  absent' and list what you did not check."
-- "Every factual claim needs a source URL."
-- "Exclude AI-generated listicles, 'best tools 2026' roundup pages,
-  programmatic pricing sites, and syndicated market-sizing sellers from all
-  factual claims. Name the sources you discarded. Roughly a third of search
-  results in this domain are vendors writing SEO about each other; report
-  that volume as a finding, but do not cite it."
-- "Distinguish vendor claims from independent evidence in every finding."
-
-The first line is the highest-value line in this skill. Framing a research
+Its first line is the highest-value line in this skill. Framing a research
 task toward confirmation rather than falsification shifts conclusions by 34
 to 66 percentage points in published measurements. That makes the framing a
 correctness requirement, not a tone preference. A thread told to check
@@ -103,20 +102,20 @@ When all four threads return, read their notes files. Then do two things.
 
 Label the landscape Open, Crowded, or Saturated. Produce that label three
 times independently, and keep the reads actually independent: launch three
-parallel subagents, each given only the four notes files and the label
-definitions below, each asked for one label and at most three sentences of
-reasoning. Do not give them each other's output or your own draft. Do not
-produce the label yourself in your own context and then "re-derive" it,
-because a second read in the same context is anchored on the first.
+parallel subagents, one each from the "Reader 1", "Reader 2" and "Reader
+3" templates in `references/thread-prompts.md`, with the "Label
+definitions" block substituted in and the four notes file paths listed in
+the order that reader's heading gives. Each reader gets one label and at
+most three sentences of reasoning. Do not give them each other's output or
+your own draft. Do not produce the label yourself in your own context and
+then "re-derive" it, because a second read in the same context is anchored
+on the first.
 
-Definitions to pass to each reader:
-- Open: no occupant covers the core of the idea; the commodity floor leaves
-  a real delta; the graveyard is empty or failed for reasons that no longer
-  hold.
-- Crowded: several occupants cover most of it; a wedge exists but incumbents
-  are close; the economics are plausible for a narrowed segment.
-- Saturated: direct occupants with published pricing, an incumbent already
-  bundling it, or a graveyard showing the segment cannot pay.
+The three templates word the question differently and order the notes
+differently, on purpose. Three copies of one prompt differ only by
+sampling noise; three phrasings test whether the label depends on how it
+was asked, which is the failure this step exists to expose. Use all three
+as written.
 
 Report all three labels and show any disagreement. Do not average, and do
 not pick a winner by majority in the prose; let the reader see the split.
@@ -130,7 +129,8 @@ is the single most informative line in the report.
 Do not add a critic, red-team, or debate agent over the synthesis. Published
 results show multi-agent debate underperforms a single strong pass and
 degrades accuracy in most configurations tested. One careful synthesis from
-the notes files beats a committee.
+the notes files beats a committee. Follow the "Synthesis rules" block in
+`references/thread-prompts.md`.
 
 ## Output
 
@@ -141,47 +141,30 @@ conversation gets a summary only.
 
 Write the full report to `checks/YYYY-MM-DD-<slug>.md` in the skill
 directory, where `<slug>` is a short kebab-case name for the idea. Create
-`checks/` if it does not exist. Begin the file with YAML front matter so
-later runs can match against it without reading the whole report:
+`checks/` if it does not exist, and if that name is already taken today,
+append `-2`, `-3` and so on rather than overwrite the earlier report.
+`checks/` is git-ignored, because an idea being checked is usually private;
+leave it that way.
 
-```yaml
----
-idea: one-line statement of the idea
-slug: kebab-case-name
-date: YYYY-MM-DD
-label: Open | Crowded | Saturated
-label_reads: [read1, read2, read3]
-top_occupants: [name1, name2, name3]
----
-```
+The file follows the "Report format" block in
+`references/thread-prompts.md` exactly: YAML front matter (idea, slug,
+date, label, the three label reads, top occupants) so later runs can match
+against it without reading the body, then nine sections in a fixed order,
+under 1,500 words, no em dashes.
 
-When the three reads disagree, set `label` to the one that appears most
-often, or to `Split` if all three differ. The front matter is a lookup key;
-the body is where the disagreement is shown.
-
-Body: markdown, under 1,200 words. Prose by default, tables only where
-comparison is genuinely needed (for example several occupants with
-pricing). No em dashes. Sections in this order, with these headings:
-
-1. **The idea, as understood.** One paragraph. The user checks this first.
-2. **Who is already there.** Named, with URLs, pricing where published,
-   and how close each is to the idea. Mark vendor claims as such.
-3. **The graveyard.** What failed and why.
-4. **The economics.** Who pays, how much, and whether the segment can pay.
-5. **The commodity floor.** What is already free or bundled.
-6. **Landscape label.** All three reads, with any disagreement shown.
-7. **What would have to be true.** The specific conditions under which the
-   idea survives, and for each, what evidence would settle it. Mark any
-   condition the research already falsified.
-8. **Sources, and sources discarded.** Every cited URL, then the discarded
-   sources from all four threads with a one-phrase reason each.
+Section 8 is the roast: up to 300 words on why the idea is stupid. Be
+properly critical: least charitable reading, every weak point, no hedging,
+no silver lining, profanity welcome. Write it yourself during
+synthesis; it is not a critic agent and does not change any other section.
+It is the one place the report takes a side, it says so in its first line,
+and every jab in it must rest on a finding from the notes. Aim it at the
+idea, not at the user.
 
 ### 2. The conversation summary, always
 
-Print at most 150 words: the landscape label and whether the three reads
-agreed, the two or three closest occupants, the single most decisive
-finding, and the path to the report file. Nobody reads 1,200 words in a
-terminal.
+Print the summary described in the "Conversation summary" block of
+`references/thread-prompts.md`, then the path to the report file. Nobody
+reads 1,500 words in a terminal.
 
 ### 3. A shareable page, only if available
 

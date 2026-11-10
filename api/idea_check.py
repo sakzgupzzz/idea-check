@@ -5,19 +5,22 @@ four parallel research threads (prior art, adjacent incumbents, graveyard
 and economics, commodity floor) using Claude's server-side web search and
 web fetch, then three independent landscape reads, then one synthesis.
 
-The thread prompts are read from ../references/thread-prompts.md so the API
-runner and the skill never drift apart.
+Every prompt is read from ../references/thread-prompts.md, which the skill
+reads too, so the two cannot drift apart.
 
 Usage:
     pip install -r requirements.txt
     export ANTHROPIC_API_KEY=...        # or `ant auth login`
-    python idea_check.py "an app that ..." --type "software product"
-    python idea_check.py --idea-file idea.txt --out ../checks
+    python idea_check.py "an app that ..."
+    python idea_check.py --idea-file idea.txt --type "hardware product"
+    python idea_check.py --resume ../checks/notes/2026-11-09-an-app-that
 
 Outputs:
-    <out>/YYYY-MM-DD-<slug>.md          the report, with YAML front matter
-    <out>/notes/<slug>/<thread>.md      each thread's full notes
+    <out>/<run>.md                      the report, with YAML front matter
+    <out>/notes/<run>/                  each thread's notes and each read
     stdout                              a summary of at most 150 words
+
+<run> is YYYY-MM-DD-<slug>, with -2, -3 ... appended if that name is taken.
 """
 
 from __future__ import annotations
@@ -27,20 +30,38 @@ import datetime as dt
 import json
 import re
 import sys
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PROMPTS_FILE = HERE.parent / "references" / "thread-prompts.md"
 
+# (notes filename, heading in thread-prompts.md)
 THREADS = [
     ("prior-art", "Thread 1: prior art"),
     ("incumbents", "Thread 2: adjacent incumbents"),
     ("graveyard-economics", "Thread 3: graveyard and economics"),
     ("commodity-floor", "Thread 4: commodity floor"),
 ]
+READERS = ["Reader 1", "Reader 2", "Reader 3"]
+
+# Every heading in thread-prompts.md that must carry a fenced block.
+SECTIONS = [
+    "Shared block",
+    "Output instruction: skill",
+    "Output instruction: API",
+    *(title for _, title in THREADS),
+    "Label definitions",
+    *READERS,
+    "Synthesis rules",
+    "Report format",
+    "Conversation summary",
+]
 
 LABELS = ("Open", "Crowded", "Saturated")
+ENTITY_TYPES = ("software product", "hardware product", "service",
+                "research direction", "content")
 
 RESEARCH_TOOLS = [
     {"type": "web_search_20260209", "name": "web_search", "max_uses": 25},
@@ -48,101 +69,250 @@ RESEARCH_TOOLS = [
      "max_content_tokens": 20000},
 ]
 
-SYNTHESIS_INSTRUCTIONS = """You are writing the final idea-check landscape report from four research
-notes files and three independent landscape reads. Do not research further.
+READER_MAX_TOKENS = 4000
+MAX_PAUSE_RESUMES = 10
+SUMMARY_MARK = "=== SUMMARY ==="
+PLACEHOLDER = re.compile(r"\{([A-Z_]+)\}")
 
-Rules:
-- Do not output a will-work or won't-work verdict. Report evidence and the
-  conditions under which the idea survives.
-- Report the three landscape reads verbatim with their reasoning. If they
-  disagree, show the disagreement; do not average or pick a winner.
-- Do not add a critic or debate pass.
-- Mark vendor claims as such. Keep "found nothing, which is not the same as
-  absent" wherever a thread said it, with what was not checked.
-- Under 1,200 words. Prose by default, a table only where comparison is
-  genuinely needed. No em dashes anywhere.
-
-Output exactly this structure.
-
-First, YAML front matter:
----
-idea: <one-line statement of the idea>
-slug: <kebab-case-name>
-date: <date given below>
-label: <Open | Crowded | Saturated; the most common read, or Split if all differ>
-label_reads: [<read1>, <read2>, <read3>]
-top_occupants: [<name1>, <name2>, <name3>]
----
-
-Then a level-one heading with a short name for the report, then these
-level-two sections in this order:
-1. The idea, as understood
-2. Who is already there
-3. The graveyard
-4. The economics
-5. The commodity floor
-6. Landscape label
-7. What would have to be true
-8. Sources, and sources discarded
-
-Then a line containing only:
-=== SUMMARY ===
-Then at most 150 words for the terminal: the label and whether the three
-reads agreed, the two or three closest occupants, and the single most
-decisive finding.
-"""
+# Words too common in idea descriptions to signal that two ideas overlap.
+STOPWORDS = frozenset("""
+    about also app apps based build builds building built company companies
+    could customers data does from have help helps idea into just like make
+    makes more most only other people platform product products service
+    services software startup startups that their them then they this tool
+    tools turns used user users uses using want what when where which will
+    with would your
+""".split())
 
 
-def load_prompts() -> dict[str, str]:
-    """Pull the fenced prompt templates out of thread-prompts.md, in order."""
-    text = PROMPTS_FILE.read_text(encoding="utf-8")
-    fences = re.findall(r"```\n(.*?)\n```", text, flags=re.S)
-    if len(fences) != 6:
-        sys.exit(
-            f"expected 6 fenced blocks in {PROMPTS_FILE} (shared, four threads, "
-            f"reader), found {len(fences)}"
-        )
-    shared, t1, t2, t3, t4, reader = fences
-    # The skill version tells each thread to save a notes file; here the
-    # runner writes the file, so swap that line for a reply instruction.
-    shared = re.sub(
-        r"Save your notes to \{NOTES_DIR\}/\{FILENAME\}\.md",
-        "Reply with your full findings in markdown, with a \"Findings\", "
-        "\"Found nothing\" (if any), \"Discarded sources\", and \"Not checked\" "
-        "section. Do not add a separate summary.",
-        shared,
-    )
-    return {
-        "shared": shared,
-        "prior-art": t1,
-        "incumbents": t2,
-        "graveyard-economics": t3,
-        "commodity-floor": t4,
-        "reader": reader,
-    }
+class PromptError(Exception):
+    """thread-prompts.md is missing something the runner needs."""
+
+
+class StageFailed(Exception):
+    """One or more requests in a stage failed; the rest were saved."""
+
+    def __init__(self, errors: dict[str, Exception]):
+        self.errors = errors
+        super().__init__("; ".join(f"{k}: {e}" for k, e in errors.items()))
+
+
+def log(msg: str) -> None:
+    print(msg, file=sys.stderr)
+
+
+# --------------------------------------------------------------------------
+# Prompts
+# --------------------------------------------------------------------------
+
+def load_prompts(path: Path = PROMPTS_FILE) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """Return (blocks, orders) from thread-prompts.md.
+
+    blocks maps each `## heading` to the text of its first fenced block.
+    orders maps each reader heading to its "Notes order:" list.
+    """
+    text = path.read_text(encoding="utf-8")
+    parts = re.split(r"^## +(.+?)[ \t]*$", text, flags=re.M)
+    blocks: dict[str, str] = {}
+    orders: dict[str, list[str]] = {}
+    for heading, body in zip(parts[1::2], parts[2::2]):
+        fence = re.search(r"^```[^\n]*\n(.*?)\n```[ \t]*$", body, flags=re.S | re.M)
+        if fence:
+            blocks[heading] = fence.group(1)
+        order = re.search(r"^Notes order:[ \t]*(.+)$", body, flags=re.M)
+        if order:
+            orders[heading] = [k.strip(" `.") for k in order.group(1).split(",")]
+
+    missing = [s for s in SECTIONS if s not in blocks]
+    if missing:
+        raise PromptError(f"{path} has no fenced block under: {', '.join(missing)}")
+    keys = sorted(k for k, _ in THREADS)
+    for reader in READERS:
+        if sorted(orders.get(reader, [])) != keys:
+            raise PromptError(
+                f"{path}: '{reader}' needs a 'Notes order:' line naming each of "
+                f"{', '.join(keys)} exactly once"
+            )
+    return blocks, orders
 
 
 def fill(template: str, **values: str) -> str:
-    out = template
-    for k, v in values.items():
-        out = out.replace("{" + k + "}", v)
-    return out
+    """Substitute {PLACEHOLDER}s in one pass; refuse to leave any behind.
 
+    One pass means a value that itself contains "{TYPE}" (an idea can say
+    anything) is not substituted a second time.
+    """
+    unknown = sorted(set(PLACEHOLDER.findall(template)) - values.keys())
+    if unknown:
+        raise PromptError(f"no value for placeholder(s): {', '.join(unknown)}")
+    return PLACEHOLDER.sub(lambda m: values[m.group(1)], template)
+
+
+def thread_prompt(blocks: dict[str, str], title: str, idea: str, entity_type: str) -> str:
+    return "\n\n".join([
+        fill(blocks[title], IDEA=idea, TYPE=entity_type),
+        fill(blocks["Shared block"]),
+        fill(blocks["Output instruction: API"]),
+    ])
+
+
+def reader_prompt(blocks: dict[str, str], orders: dict[str, list[str]],
+                  reader: str, idea: str, notes: dict[str, str]) -> str:
+    bundle = "\n\n".join(
+        f'<notes thread="{key}">\n{notes[key]}\n</notes>' for key in orders[reader]
+    )
+    return fill(blocks[reader], IDEA=idea, NOTES=bundle,
+                LABEL_DEFINITIONS=blocks["Label definitions"])
+
+
+def synthesis_system(blocks: dict[str, str]) -> str:
+    return "\n\n".join([
+        "You are writing the final idea-check landscape report from four "
+        "research notes and three independent landscape reads, all given in "
+        "the user message.",
+        fill(blocks["Synthesis rules"]),
+        "Output exactly this structure and nothing before it.",
+        fill(blocks["Report format"]),
+        f"After the report, a line containing only:\n{SUMMARY_MARK}\n"
+        "Then a summary for the terminal:",
+        fill(blocks["Conversation summary"]),
+    ])
+
+
+# --------------------------------------------------------------------------
+# Labels and front matter
+# --------------------------------------------------------------------------
+
+def parse_label(read: str) -> str:
+    """The label on the read's first non-empty line, tolerant of markdown
+    and prefixes ("**Saturated**", "Label: Saturated")."""
+    first = next((ln for ln in read.splitlines() if ln.strip()), "")
+    found = [l for l in LABELS if re.search(rf"\b{l}\b", first, flags=re.I)]
+    return found[0] if len(found) == 1 else "Unlabelled"
+
+
+def overall_label(labels: list[str]) -> str:
+    """The label at least two reads agree on, else Split."""
+    counts = Counter(l for l in labels if l in LABELS)
+    if counts:
+        label, n = counts.most_common(1)[0]
+        if n >= 2:
+            return label
+    return "Split"
+
+
+def set_front_matter(report: str, **fields: str) -> str:
+    """Overwrite (or add) front-matter fields with values the runner knows,
+    so the lookup key never depends on the model copying them correctly."""
+    report = report.strip()
+    report = re.sub(r"^```[a-z]*\n(.*)\n```$", r"\1", report, flags=re.S)  # stray wrapper fence
+    m = re.match(r"---\n(.*?)\n---\n?", report, flags=re.S)
+    lines = m.group(1).splitlines() if m else []
+    body = report[m.end():] if m else report
+    for key, value in fields.items():
+        new = f"{key}: {value}"
+        for i, line in enumerate(lines):
+            if re.match(rf"{key}\s*:", line):
+                lines[i] = new
+                break
+        else:
+            lines.append(new)
+    return "---\n" + "\n".join(lines) + "\n---\n\n" + body.lstrip() + "\n"
+
+
+def read_front_matter(path: Path) -> dict[str, str]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    m = re.match(r"---\n(.*?)\n---", text, flags=re.S)
+    if not m:
+        return {}
+    pairs = (line.split(":", 1) for line in m.group(1).splitlines() if ":" in line)
+    return {k.strip(): v.strip() for k, v in pairs}
+
+
+# --------------------------------------------------------------------------
+# Runs on disk
+# --------------------------------------------------------------------------
 
 def slugify(text: str, limit: int = 40) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return s[:limit].rstrip("-") or "idea"
 
 
+def new_run_name(out: Path, today: str, slug: str) -> str:
+    """YYYY-MM-DD-slug, suffixed so an earlier run is never overwritten."""
+    base = name = f"{today}-{slug}"
+    n = 2
+    while (out / f"{name}.md").exists() or (out / "notes" / name).exists():
+        name = f"{base}-{n}"
+        n += 1
+    return name
+
+
+def significant_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]{4,}", text.lower()) if w not in STOPWORDS}
+
+
+def related_checks(out: Path, idea: str, min_shared: int = 3) -> list[tuple[Path, dict[str, str]]]:
+    """Earlier reports in `out` whose idea shares several significant words
+    with this one. A crude match on purpose: it only has to prompt a look."""
+    words = significant_words(idea)
+    hits = []
+    for path in sorted(out.glob("*.md")):
+        fm = read_front_matter(path)
+        if not fm:
+            continue
+        theirs = significant_words(fm.get("idea", "") + " " + fm.get("slug", ""))
+        if len(words & theirs) >= min_shared:
+            hits.append((path, fm))
+    return hits
+
+
+def cached(path: Path, produce, resume: bool) -> str:
+    """Return the saved text if resuming and present, else produce and save."""
+    if resume and path.exists():
+        text = path.read_text(encoding="utf-8")
+        if text.strip():
+            log(f"      {path.stem}: reused from {path}")
+            return text
+    text = produce()
+    path.write_text(text, encoding="utf-8")
+    return text
+
+
+def run_all(jobs: dict) -> dict[str, str]:
+    """Run every job in parallel. Let all finish (so finished work is saved)
+    before reporting any failure."""
+    results: dict[str, str] = {}
+    errors: dict[str, Exception] = {}
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = {key: pool.submit(job) for key, job in jobs.items()}
+        for key, future in futures.items():
+            try:
+                results[key] = future.result()
+            except Exception as e:  # noqa: BLE001 - reported to the user below
+                errors[key] = e
+    if errors:
+        raise StageFailed(errors)
+    return results
+
+
+# --------------------------------------------------------------------------
+# API
+# --------------------------------------------------------------------------
+
 def text_of(message) -> str:
     return "".join(b.text for b in message.content if b.type == "text")
 
 
-def run_turns(client, *, model: str, effort: str, system: str | None,
-              user_content, tools=None, max_tokens: int = 64000) -> str:
+def run_turns(client, *, what: str, model: str, effort: str, system: str | None,
+              user_content, tools=None, max_tokens: int = 64000,
+              truncation_hint: str = "raise --max-tokens") -> str:
     """One streamed request, resumed on pause_turn until the model ends."""
     messages = [{"role": "user", "content": user_content}]
-    while True:
+    for _ in range(MAX_PAUSE_RESUMES + 1):
         kwargs = dict(
             model=model,
             max_tokens=max_tokens,
@@ -163,120 +333,209 @@ def run_turns(client, *, model: str, effort: str, system: str | None,
             continue
         if message.stop_reason == "refusal":
             cat = message.stop_details.category if message.stop_details else None
-            raise RuntimeError(f"request refused (category={cat})")
+            raise RuntimeError(f"{what}: request refused (category={cat})")
         if message.stop_reason == "max_tokens":
-            raise RuntimeError("output truncated at max_tokens; raise --max-tokens")
+            raise RuntimeError(
+                f"{what}: output truncated at max_tokens={max_tokens}; {truncation_hint}"
+            )
         return text_of(message)
+    raise RuntimeError(f"{what}: still paused after {MAX_PAUSE_RESUMES} resumes; giving up")
 
 
-def main() -> int:
+def infer_type(client, model: str, idea: str) -> str:
+    reply = run_turns(
+        client, what="entity type", model=model, effort="low", system=None,
+        user_content=(
+            f"Classify this idea as exactly one of: {', '.join(ENTITY_TYPES)}.\n"
+            f"Reply with the type and nothing else.\n\nIdea: {idea}"
+        ),
+        max_tokens=READER_MAX_TOKENS,
+        truncation_hint="pass --type to skip this step",
+    ).lower()
+    for t in ENTITY_TYPES:
+        if t in reply:
+            return t
+    log(f"      could not infer an entity type from {reply!r}; using 'software product'")
+    return "software product"
+
+
+# --------------------------------------------------------------------------
+# Main
+# --------------------------------------------------------------------------
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("idea", nargs="?", help="the idea in plain English")
     ap.add_argument("--idea-file", type=Path, help="read the idea from a file")
-    ap.add_argument("--type", default="software product",
-                    help="entity type: software product, hardware product, "
-                         "service, research direction, content")
+    ap.add_argument("--type", default=None,
+                    help=f"entity type: {', '.join(ENTITY_TYPES)} "
+                         "(default: inferred from the idea)")
     ap.add_argument("--model", default="claude-opus-5-5",
                     help="model for research threads and synthesis")
     ap.add_argument("--reader-model", default=None,
                     help="model for the three landscape reads (default: --model)")
     ap.add_argument("--out", type=Path, default=HERE.parent / "checks",
                     help="directory for the report and notes")
-    ap.add_argument("--max-tokens", type=int, default=64000)
+    ap.add_argument("--max-tokens", type=int, default=64000,
+                    help="output cap for each research thread and the synthesis")
+    ap.add_argument("--fresh", action="store_true",
+                    help="run even if an earlier report in --out looks related")
+    ap.add_argument("--resume", type=Path, metavar="NOTES_DIR",
+                    help="finish an interrupted run, reusing the notes and reads "
+                         "already saved in its notes directory")
     ap.add_argument("--dry-run", action="store_true",
-                    help="print the assembled prompts and exit without calling the API")
-    args = ap.parse_args()
+                    help="print the prompts exactly as they would be sent, "
+                         "then exit without calling the API")
+    args = ap.parse_args(argv)
 
-    if args.idea_file:
-        idea = args.idea_file.read_text(encoding="utf-8").strip()
-    elif args.idea:
-        idea = args.idea.strip()
+    try:
+        blocks, orders = load_prompts()
+    except PromptError as e:
+        log(f"error: {e}")
+        return 2
+
+    if args.resume:
+        if args.idea or args.idea_file:
+            ap.error("--resume takes the idea from the saved run; do not pass one")
+        notes_dir = args.resume.resolve()
+        try:
+            run = json.loads((notes_dir / "run.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            ap.error(f"cannot resume from {notes_dir}: {e}")
+        idea, entity_type = run["idea"], run["type"]
+        today, slug, name = run["date"], run["slug"], run["name"]
+        out = notes_dir.parent.parent
     else:
-        ap.error("give the idea as an argument or with --idea-file")
+        if args.idea_file:
+            idea = args.idea_file.read_text(encoding="utf-8").strip()
+        elif args.idea:
+            idea = args.idea.strip()
+        else:
+            ap.error("give the idea as an argument or with --idea-file")
+        entity_type = args.type
+        today = dt.date.today().isoformat()
+        slug = slugify(idea)
+        out = args.out
+        name = new_run_name(out, today, slug)
+        notes_dir = out / "notes" / name
 
-    prompts = load_prompts()
-    today = dt.date.today().isoformat()
-    slug = slugify(idea)
-    notes_dir = args.out / "notes" / slug
     reader_model = args.reader_model or args.model
-
-    thread_prompts = {
-        key: fill(prompts[key], IDEA=idea, TYPE=args.type) + "\n\n" + prompts["shared"]
-        for key, _ in THREADS
-    }
+    report_path = out / f"{name}.md"
 
     if args.dry_run:
-        for key, title in THREADS:
-            print(f"===== {title} ({args.model}) =====\n{thread_prompts[key]}\n")
-        print(f"===== reader x3 ({reader_model}) =====\n{prompts['reader']}\n")
-        print(f"===== synthesis ({args.model}) =====\n{SYNTHESIS_INSTRUCTIONS}")
-        print(f"report would be written to {args.out / f'{today}-{slug}.md'}")
+        shown_type = entity_type or "<inferred from the idea at run time>"
+        placeholder_notes = {k: f"<notes from the {k} thread>" for k, _ in THREADS}
+        for _, title in THREADS:
+            print(f"===== {title} ({args.model}) =====\n"
+                  f"{thread_prompt(blocks, title, idea, shown_type)}\n")
+        for reader in READERS:
+            print(f"===== {reader} ({reader_model}) =====\n"
+                  f"{reader_prompt(blocks, orders, reader, idea, placeholder_notes)}\n")
+        print(f"===== synthesis system prompt ({args.model}) =====\n"
+              f"{synthesis_system(blocks)}\n")
+        print(f"report would be written to {report_path}")
         return 0
+
+    if not args.resume and not args.fresh:
+        related = related_checks(out, idea)
+        if related:
+            log("An earlier check looks related to this idea:")
+            for path, fm in related:
+                log(f"  {path}\n    {fm.get('date', '?')}  {fm.get('label', '?')}  "
+                    f"{fm.get('idea', '')}")
+            log("Read it first. To run new research anyway, add --fresh.")
+            return 3
 
     import anthropic  # imported here so --dry-run works without the SDK
 
     client = anthropic.Anthropic()
-    notes_dir.mkdir(parents=True, exist_ok=True)
+    resume = bool(args.resume)
 
-    # Stage 1: four research threads in parallel.
-    print(f"[1/3] running four research threads on {args.model} ...", file=sys.stderr)
+    try:
+        if entity_type is None:
+            log(f"[0/3] inferring the entity type on {reader_model} ...")
+            entity_type = infer_type(client, reader_model, idea)
+            log(f"      type: {entity_type}")
 
-    def research(key: str) -> tuple[str, str]:
-        text = run_turns(
-            client, model=args.model, effort="high", system=None,
-            user_content=thread_prompts[key], tools=RESEARCH_TOOLS,
+        notes_dir.mkdir(parents=True, exist_ok=True)
+        (notes_dir / "run.json").write_text(json.dumps({
+            "idea": idea, "type": entity_type, "date": today,
+            "slug": slug, "name": name,
+        }, indent=2), encoding="utf-8")
+
+        # Stage 1: four research threads in parallel.
+        log(f"[1/3] running four research threads on {args.model} ...")
+
+        def research(key: str, title: str) -> str:
+            def produce() -> str:
+                text = run_turns(
+                    client, what=key, model=args.model, effort="high", system=None,
+                    user_content=thread_prompt(blocks, title, idea, entity_type),
+                    tools=RESEARCH_TOOLS, max_tokens=args.max_tokens,
+                )
+                log(f"      {key}: {len(text.split())} words")
+                return text
+            return cached(notes_dir / f"{key}.md", produce, resume)
+
+        notes = run_all({key: (lambda k=key, t=title: research(k, t))
+                         for key, title in THREADS})
+
+        # Stage 2: three independent reads. Each sees only the notes and its
+        # own prompt; none sees another read or any draft of the synthesis.
+        log(f"[2/3] three independent landscape reads on {reader_model} ...")
+
+        def read_once(reader: str) -> str:
+            def produce() -> str:
+                return run_turns(
+                    client, what=reader, model=reader_model, effort="low", system=None,
+                    user_content=reader_prompt(blocks, orders, reader, idea, notes),
+                    max_tokens=READER_MAX_TOKENS,
+                    truncation_hint="raise READER_MAX_TOKENS in idea_check.py",
+                ).strip()
+            return cached(notes_dir / f"{slugify(reader)}.md", produce, resume)
+
+        reads_by_reader = run_all({r: (lambda r=r: read_once(r)) for r in READERS})
+        reads = [reads_by_reader[r] for r in READERS]
+        labels = [parse_label(r) for r in reads]
+        log(f"      reads: {labels}")
+        if "Unlabelled" in labels:
+            log("      warning: a read did not open with a label; see the "
+                f"reader-*.md files in {notes_dir}")
+
+        # Stage 3: one synthesis. No critic pass.
+        log(f"[3/3] synthesis on {args.model} ...")
+        notes_bundle = "\n\n".join(
+            f'<notes thread="{key}">\n{notes[key]}\n</notes>' for key, _ in THREADS
+        )
+        reads_block = "\n\n".join(
+            f'<read n="{i + 1}">\n{r}\n</read>' for i, r in enumerate(reads)
+        )
+        synthesis = run_turns(
+            client, what="synthesis", model=args.model, effort="high",
+            system=synthesis_system(blocks),
+            user_content=(
+                f"Idea: {idea}\nEntity type: {entity_type}\nDate: {today}\n"
+                f"Slug: {slug}\n\n{notes_bundle}\n\n{reads_block}"
+            ),
             max_tokens=args.max_tokens,
         )
-        (notes_dir / f"{key}.md").write_text(text, encoding="utf-8")
-        print(f"      {key}: {len(text.split())} words", file=sys.stderr)
-        return key, text
+    except (StageFailed, RuntimeError, anthropic.APIError) as e:
+        if isinstance(e, StageFailed):
+            for key, err in e.errors.items():
+                log(f"error: {key}: {err}")
+        else:
+            log(f"error: {e}")
+        if (notes_dir / "run.json").exists():
+            log("Finished work is saved. To pick up where this stopped:\n"
+                f'  python {Path(__file__).name} --resume "{notes_dir}"')
+        return 1
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        notes = dict(pool.map(research, [k for k, _ in THREADS]))
-
-    notes_bundle = "\n\n".join(
-        f"<notes thread=\"{key}\">\n{notes[key]}\n</notes>" for key, _ in THREADS
+    report, _, summary = synthesis.partition(SUMMARY_MARK)
+    report = set_front_matter(
+        report, slug=slug, date=today, label=overall_label(labels),
+        label_reads="[" + ", ".join(labels) + "]",
     )
-
-    # Stage 2: three independent reads. Each sees only the notes and the
-    # reader prompt; none sees another read or any draft of the synthesis.
-    print(f"[2/3] three independent landscape reads on {reader_model} ...", file=sys.stderr)
-    reader_prompt = re.sub(
-        r"Read these four research notes files and nothing else:\n(?:\{NOTES_DIR\}/[^\n]+\n)+",
-        "Read the four research notes below and nothing else.\n",
-        prompts["reader"],
-    )
-    reader_prompt = fill(reader_prompt, IDEA=idea)
-
-    def read_once(i: int) -> str:
-        return run_turns(
-            client, model=reader_model, effort="low", system=None,
-            user_content=f"{reader_prompt}\n\n{notes_bundle}",
-            max_tokens=2000,
-        ).strip()
-
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        reads = list(pool.map(read_once, range(3)))
-    labels = [next((l for l in LABELS if r.lower().startswith(l.lower())), "Unlabelled")
-              for r in reads]
-    print(f"      reads: {labels}", file=sys.stderr)
-
-    # Stage 3: one synthesis. No critic pass.
-    print(f"[3/3] synthesis on {args.model} ...", file=sys.stderr)
-    reads_block = "\n\n".join(f"<read n=\"{i + 1}\">\n{r}\n</read>" for i, r in enumerate(reads))
-    synthesis = run_turns(
-        client, model=args.model, effort="high", system=SYNTHESIS_INSTRUCTIONS,
-        user_content=(
-            f"Idea: {idea}\nEntity type: {args.type}\nDate: {today}\nSlug: {slug}\n\n"
-            f"{notes_bundle}\n\n{reads_block}"
-        ),
-        max_tokens=args.max_tokens,
-    )
-
-    report, _, summary = synthesis.partition("=== SUMMARY ===")
-    report = report.strip() + "\n"
-    report_path = args.out / f"{today}-{slug}.md"
     report_path.write_text(report, encoding="utf-8")
 
     print(summary.strip() or "(no summary section returned)")

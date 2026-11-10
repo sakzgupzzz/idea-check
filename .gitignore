@@ -1,8 +1,7 @@
-# Reports about private projects stay local
-checks/2026-11-03-fungi-synergy-predictor.md
+# Reports are local by default: an idea being checked is usually private.
+# Published samples live in examples/.
+checks/
 
-# API runner working files
-checks/notes/
 __pycache__/
 *.pyc
 .venv/
