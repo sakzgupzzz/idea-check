@@ -262,24 +262,36 @@ absent" wherever a thread said it, with what was not checked.
 ## Report format
 
 ```
-Begin with YAML front matter, so later runs can match against the report
+The report has two parts: a metadata block, and nine sections of HTML.
+
+The metadata block is one field per line. Later runs match against it
 without reading the body:
 
----
 idea: <one-line statement of the idea>
+title: <a name for this report, two to four words, no punctuation>
 slug: <kebab-case-name>
 date: <YYYY-MM-DD>
 label: <Open | Crowded | Saturated | Split>
 label_reads: [<read1>, <read2>, <read3>]
 top_occupants: [<name1>, <name2>, <name3>]
----
 
 Set label to the read that appears at least twice, or to Split if none
-does. The front matter is a lookup key; the body is where any disagreement
-is shown.
+does. The metadata is a lookup key; the body is where any disagreement is
+shown.
 
-Then a level-one heading with a short name for the report, then these
-level-two sections, in this order:
+Then nine sections, in this order. Write each as a <section> element with
+the id given here and an <h2> holding the heading. Do not write an <h1>,
+a page header or any CSS; the page template supplies those. The ids, in
+order: idea, occupants, graveyard, economics, floor, label, conditions,
+roast, sources.
+
+Inside a section use only p, ul, ol, li, h3, strong, em, a, blockquote and
+table. Wrap every table in <div class="scroll">. Write every URL as an
+<a href> link. Label findings with <span class="tag vendor">vendor
+claim</span> or <span class="tag indep">independent</span>, and mark a
+falsified condition with <span class="tag falsified">already
+falsified</span>. No inline styles, no scripts, no images. Escape &, < and
+> in text.
 
 1. The idea, as understood. One paragraph. The user checks this first.
 2. Who is already there. Named, with URLs, pricing where published, and how
@@ -291,8 +303,9 @@ level-two sections, in this order:
 7. What would have to be true. The specific conditions under which the idea
    survives, and for each, what evidence would settle it. Mark any
    condition the research already falsified.
-8. The roast. Open with this line in italics: "One-sided on purpose. This
-   is the case against, at full volume, not the verdict." Then explain why
+8. The roast. Open with this line as its own paragraph inside <em>:
+   "One-sided on purpose. This is the case against, at full volume, not
+   the verdict." Then explain why
    this idea is fucking stupid, in at most 300 words. Be goddamn critical.
    Take the least charitable reading the evidence allows and commit to it.
    Go after every weak point the research exposed, not just the biggest
@@ -310,10 +323,41 @@ level-two sections, in this order:
 9. Sources, and sources discarded. Every cited URL, then the discarded
    sources from all four threads with a one-phrase reason each.
 
-Keep the body under 1,500 words. Prose by default; a table only where
-comparison is genuinely needed (for example several occupants with
-pricing). No em dashes anywhere.
+Keep the nine sections under 1,500 words of text. Prose by default; a
+table only where comparison is genuinely needed (for example several
+occupants with pricing). No em dashes anywhere.
 ```
+
+## Report page
+
+The report is an HTML page, not a markdown file. `report-template.html`,
+next to this file, holds the page: its CSS, its header and the slots
+below. Copy it and fill every slot; do not restyle it or add CSS of your
+own. The API runner fills the same slots in code.
+
+- `{META}`: the metadata block from "Report format", one field per line.
+  It sits in an HTML comment on the first lines of the file, which is what
+  later runs read. Do not put `--` inside it.
+- `{TITLE}`: the `title` field. It is used twice, as the page title and
+  the heading.
+- `{IDEA}`: the `idea` field.
+- `{DATE}`: the `date` field.
+- `{LABEL}`: the `label` field. It is used twice.
+- `{SCALE}`: three list items, always in the order Open, Crowded,
+  Saturated, in the shape shown below. Put one `<i>` per read inside the
+  `marks` of the stop that read chose, numbered by reader (1, 2, 3), and
+  add the class `chosen` to every stop that has at least one mark.
+- `{SECTIONS}`: the nine sections.
+
+```
+      <li class="stop stop-open"><span class="marks"></span><span class="bar"></span><span class="stop-name">Open</span></li>
+      <li class="stop stop-crowded chosen"><span class="marks"><i>2</i></span><span class="bar"></span><span class="stop-name">Crowded</span></li>
+      <li class="stop stop-saturated chosen"><span class="marks"><i>1</i><i>3</i></span><span class="bar"></span><span class="stop-name">Saturated</span></li>
+```
+
+The file has no `<!doctype>`, `<html>`, `<head>` or `<body>` tags, on
+purpose: that is the form a published artifact page takes, and a browser
+opens it as it is.
 
 ## Conversation summary
 

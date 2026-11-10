@@ -120,20 +120,26 @@ in `examples/` predate this section and do not have one.
 
 ## Output
 
-The full report is written to `checks/YYYY-MM-DD-<slug>.md` inside the
-skill folder, with YAML front matter (idea, slug, date, label, the three
-label reads, top occupants) so later runs can find it without reading the
-body. The conversation gets a summary of at most 150 words and the file
-path. If the session has a page-publishing tool, the report is also
-published as a shareable page; if not, nothing is lost.
+The report is a styled HTML page, not a markdown file. It is written to
+`checks/YYYY-MM-DD-<slug>.html` inside the skill folder from
+`references/report-template.html`, which holds the CSS and a header that
+shows the label on a three-stop scale with each independent read marked on
+it. In a session that can publish artifacts, the skill publishes the page
+and gives you the link; artifacts are private until you share them.
+Without that tool, the saved file opens in any browser. The conversation
+gets a summary of at most 150 words, the link and the file path.
+
+The first lines of each page carry a metadata comment (idea, title, slug,
+date, label, the three label reads, top occupants) so later runs can find
+a report without reading the body.
 
 `checks/` is git-ignored. The idea you are checking is usually private, and
 the skill folder is a git clone, so reports stay out of version control
 unless you move one out deliberately. A second check of the same idea on
 the same day gets a `-2` suffix instead of replacing the first.
 
-Before launching research, the skill lists `checks/` and reads the front
-matter of anything related. If an earlier check overlaps, it says so and
+Before launching research, the skill lists `checks/` and reads the
+metadata of anything related. If an earlier check overlaps, it says so and
 asks whether to extend it or run fresh, because repeating a check you have
 already run is the most common waste in this workflow.
 
@@ -144,12 +150,16 @@ already run is the most common waste in this workflow.
   prompts, the shared block, the label definitions, the three reader
   prompts, the synthesis rules and the report format. Read by both the
   skill and the API runner.
+- `references/report-template.html`: the report page, with its CSS, light
+  and dark themes, and the slots the skill and the runner fill.
 - `api/`: the Claude API runner (`idea_check.py`), its README and
   requirements.
-- `checks/`: one report per idea you check. Created on first run and
+- `checks/`: one report page per idea you check. Created on first run and
   git-ignored.
 - `examples/`: two sample reports from 2026-11-03, an AI entertainment
   startup and a robotics lab startup, both researched at category level.
+  They are in the older markdown format, from before the HTML page and
+  the roast.
 - `tests/`: offline tests for the runner and the prompt file. Run them
   with `python -m unittest discover -s tests`; they also run in CI.
 - `LICENSE`: MIT.

@@ -16,7 +16,7 @@ Usage:
     python idea_check.py --resume ../checks/notes/2026-11-09-an-app-that
 
 Outputs:
-    <out>/<run>.md                      the report, with YAML front matter
+    <out>/<run>.html                    the report page, metadata in its first lines
     <out>/notes/<run>/                  each thread's notes and each read
     stdout                              a summary of at most 150 words
 
@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import html
 import json
 import re
 import sys
@@ -36,6 +37,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PROMPTS_FILE = HERE.parent / "references" / "thread-prompts.md"
+TEMPLATE_FILE = HERE.parent / "references" / "report-template.html"
 
 # (notes filename, heading in thread-prompts.md)
 THREADS = [
@@ -171,7 +173,9 @@ def synthesis_system(blocks: dict[str, str]) -> str:
         "research notes and three independent landscape reads, all given in "
         "the user message.",
         fill(blocks["Synthesis rules"]),
-        "Output exactly this structure and nothing before it.",
+        "Output exactly this structure and nothing before it: the metadata "
+        "block between two lines containing only ---, then the nine sections "
+        "as raw HTML with no code fence around them.",
         fill(blocks["Report format"]),
         f"After the report, a line containing only:\n{SUMMARY_MARK}\n"
         "Then a summary for the terminal:",
@@ -201,35 +205,80 @@ def overall_label(labels: list[str]) -> str:
     return "Split"
 
 
-def set_front_matter(report: str, **fields: str) -> str:
-    """Overwrite (or add) front-matter fields with values the runner knows,
-    so the lookup key never depends on the model copying them correctly."""
-    report = report.strip()
-    report = re.sub(r"^```[a-z]*\n(.*)\n```$", r"\1", report, flags=re.S)  # stray wrapper fence
+def parse_fields(block: str) -> dict[str, str]:
+    pairs = (line.split(":", 1) for line in block.splitlines() if ":" in line)
+    return {k.strip(): v.strip() for k, v in pairs}
+
+
+def _unfence(text: str) -> str:
+    """Drop a code fence the model wrapped around its output, if any."""
+    return re.sub(r"^```[a-z]*\n(.*)\n```$", r"\1", text.strip(), flags=re.S)
+
+
+def parse_synthesis(text: str) -> tuple[dict[str, str], str, str]:
+    """Split the synthesis reply into (metadata fields, sections HTML, summary)."""
+    report, _, summary = text.partition(SUMMARY_MARK)
+    report = _unfence(report)
+    fields: dict[str, str] = {}
     m = re.match(r"---\n(.*?)\n---\n?", report, flags=re.S)
-    lines = m.group(1).splitlines() if m else []
-    body = report[m.end():] if m else report
-    for key, value in fields.items():
-        new = f"{key}: {value}"
-        for i, line in enumerate(lines):
-            if re.match(rf"{key}\s*:", line):
-                lines[i] = new
-                break
-        else:
-            lines.append(new)
-    return "---\n" + "\n".join(lines) + "\n---\n\n" + body.lstrip() + "\n"
+    if m:
+        fields = parse_fields(m.group(1))
+        report = report[m.end():]
+    sections = _unfence(report)
+    # The page is opened locally and may be published; it never needs script.
+    sections = re.sub(r"<script\b.*?</script>", "", sections, flags=re.S | re.I)
+    return fields, sections.strip(), summary.strip()
+
+
+def scale_html(labels: list[str]) -> str:
+    """The three stops of the header scale, each read marked on its stop."""
+    items = []
+    for label in LABELS:
+        marks = "".join(f"<i>{i + 1}</i>" for i, l in enumerate(labels) if l == label)
+        chosen = " chosen" if marks else ""
+        items.append(
+            f'      <li class="stop stop-{label.lower()}{chosen}">'
+            f'<span class="marks">{marks}</span><span class="bar"></span>'
+            f'<span class="stop-name">{label}</span></li>'
+        )
+    return "\n".join(items)
+
+
+def render_report(template: str, fields: dict[str, str], sections: str, *,
+                  slug: str, date: str, labels: list[str]) -> str:
+    """Fill report-template.html. The runner supplies slug, date, label and
+    label_reads itself, so the lookup key never depends on the model
+    copying them correctly."""
+    idea = fields.get("idea", "")
+    title = fields.get("title") or slug.replace("-", " ").capitalize()
+    label = overall_label(labels)
+    meta = {
+        "idea": idea,
+        "title": title,
+        "slug": slug,
+        "date": date,
+        "label": label,
+        "label_reads": "[" + ", ".join(labels) + "]",
+        "top_occupants": fields.get("top_occupants", "[]"),
+    }
+    # "--" would end the HTML comment the metadata sits in.
+    meta_text = "\n".join(k + ": " + re.sub(r"-{2,}", "-", v) for k, v in meta.items())
+    return fill(template, META=meta_text, TITLE=html.escape(title),
+                IDEA=html.escape(idea), DATE=date, LABEL=label,
+                SCALE=scale_html(labels), SECTIONS=sections)
 
 
 def read_front_matter(path: Path) -> dict[str, str]:
+    """Metadata of a saved report: the leading comment of an .html report,
+    or the YAML front matter of an older .md one."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
         return {}
-    m = re.match(r"---\n(.*?)\n---", text, flags=re.S)
+    m = re.match(r"\s*(?:---\n(.*?)\n---|<!--idea-check\n(.*?)\n-->)", text, flags=re.S)
     if not m:
         return {}
-    pairs = (line.split(":", 1) for line in m.group(1).splitlines() if ":" in line)
-    return {k.strip(): v.strip() for k, v in pairs}
+    return parse_fields(m.group(1) or m.group(2))
 
 
 # --------------------------------------------------------------------------
@@ -245,7 +294,8 @@ def new_run_name(out: Path, today: str, slug: str) -> str:
     """YYYY-MM-DD-slug, suffixed so an earlier run is never overwritten."""
     base = name = f"{today}-{slug}"
     n = 2
-    while (out / f"{name}.md").exists() or (out / "notes" / name).exists():
+    while (out / f"{name}.html").exists() or (out / f"{name}.md").exists() \
+            or (out / "notes" / name).exists():
         name = f"{base}-{n}"
         n += 1
     return name
@@ -260,7 +310,7 @@ def related_checks(out: Path, idea: str, min_shared: int = 3) -> list[tuple[Path
     with this one. A crude match on purpose: it only has to prompt a look."""
     words = significant_words(idea)
     hits = []
-    for path in sorted(out.glob("*.md")):
+    for path in sorted([*out.glob("*.html"), *out.glob("*.md")]):
         fm = read_front_matter(path)
         if not fm:
             continue
@@ -391,7 +441,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         blocks, orders = load_prompts()
-    except PromptError as e:
+        template = TEMPLATE_FILE.read_text(encoding="utf-8")
+    except (PromptError, OSError) as e:
         log(f"error: {e}")
         return 2
 
@@ -421,7 +472,7 @@ def main(argv: list[str] | None = None) -> int:
         notes_dir = out / "notes" / name
 
     reader_model = args.reader_model or args.model
-    report_path = out / f"{name}.md"
+    report_path = out / f"{name}.html"
 
     if args.dry_run:
         shown_type = entity_type or "<inferred from the idea at run time>"
@@ -531,14 +582,16 @@ def main(argv: list[str] | None = None) -> int:
                 f'  python {Path(__file__).name} --resume "{notes_dir}"')
         return 1
 
-    report, _, summary = synthesis.partition(SUMMARY_MARK)
-    report = set_front_matter(
-        report, slug=slug, date=today, label=overall_label(labels),
-        label_reads="[" + ", ".join(labels) + "]",
-    )
+    fields, sections, summary = parse_synthesis(synthesis)
+    try:
+        report = render_report(template, fields, sections,
+                               slug=slug, date=today, labels=labels)
+    except PromptError as e:
+        log(f"error: {TEMPLATE_FILE.name}: {e}")
+        return 2
     report_path.write_text(report, encoding="utf-8")
 
-    print(summary.strip() or "(no summary section returned)")
+    print(summary or "(no summary section returned)")
     print(f"\nReport: {report_path}\nNotes:  {notes_dir}")
     return 0
 

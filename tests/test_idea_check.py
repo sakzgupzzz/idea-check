@@ -103,20 +103,58 @@ class Labels(unittest.TestCase):
         self.assertEqual(ic.overall_label(["Saturated"] * 3), "Saturated")
 
 
-class FrontMatter(unittest.TestCase):
-    def test_runner_values_override_the_models(self):
-        report = ("---\nidea: a thing\nslug: wrong\nlabel: Open\n"
-                  "label_reads: [Open, Open, Open]\ntop_occupants: [A, B]\n---\n\n# T\n\nBody\n")
-        out = ic.set_front_matter(report, slug="right", date="2026-01-02",
-                                  label="Split", label_reads="[Open, Crowded, Saturated]")
-        self.assertTrue(out.startswith("---\nidea: a thing\nslug: right\nlabel: Split\n"))
-        self.assertIn("label_reads: [Open, Crowded, Saturated]\n", out)
-        self.assertIn("top_occupants: [A, B]\n", out)
-        self.assertIn("date: 2026-01-02\n---\n\n# T\n\nBody\n", out)
+class ReportPage(unittest.TestCase):
+    SYNTHESIS = (
+        "---\nidea: a thing -- with a dash\ntitle: Thing Check\nslug: wrong\n"
+        "label: Open\nlabel_reads: [Open, Open, Open]\ntop_occupants: [A, B]\n---\n\n"
+        '<section id="idea"><h2>The idea, as understood</h2><p>Body</p></section>\n'
+        "<script>alert(1)</script>\n"
+        "=== SUMMARY ===\nShort summary."
+    )
 
-    def test_front_matter_is_added_when_missing(self):
-        out = ic.set_front_matter("# T\n\nBody", label="Open")
-        self.assertEqual(out, "---\nlabel: Open\n---\n\n# T\n\nBody\n")
+    def setUp(self):
+        self.template = ic.TEMPLATE_FILE.read_text(encoding="utf-8")
+
+    def render(self, labels):
+        fields, sections, summary = ic.parse_synthesis(self.SYNTHESIS)
+        page = ic.render_report(self.template, fields, sections,
+                                slug="right", date="2026-01-02", labels=labels)
+        return page, summary
+
+    def test_page_is_complete_and_script_free(self):
+        page, summary = self.render(["Saturated", "Crowded", "Saturated"])
+        self.assertEqual(summary, "Short summary.")
+        self.assertIsNone(PLACEHOLDER.search(page))
+        self.assertNotIn("<script", page)
+        self.assertIn("<title>Thing Check</title>", page)
+        self.assertIn('<section id="idea">', page)
+        self.assertIn('data-label="Saturated"', page)
+        # The page publishes as an artifact, which supplies its own skeleton.
+        for tag in ("<!doctype", "<html", "<head>", "<body"):
+            self.assertNotIn(tag, page.lower())
+
+    def test_runner_values_override_the_models_in_the_metadata(self):
+        page, _ = self.render(["Open", "Crowded", "Saturated"])
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "r.html"
+            p.write_text(page, encoding="utf-8")
+            meta = ic.read_front_matter(p)
+        self.assertEqual(meta["slug"], "right")
+        self.assertEqual(meta["date"], "2026-01-02")
+        self.assertEqual(meta["label"], "Split")
+        self.assertEqual(meta["label_reads"], "[Open, Crowded, Saturated]")
+        self.assertEqual(meta["top_occupants"], "[A, B]")
+        self.assertEqual(meta["idea"], "a thing - with a dash")
+
+    def test_scale_marks_each_read_on_its_stop(self):
+        scale = ic.scale_html(["Saturated", "Crowded", "Saturated"])
+        self.assertIn('stop-open"><span class="marks"></span>', scale)
+        self.assertIn('stop-crowded chosen"><span class="marks"><i>2</i></span>', scale)
+        self.assertIn('stop-saturated chosen"><span class="marks"><i>1</i><i>3</i></span>', scale)
+
+    def test_old_markdown_front_matter_is_still_read(self):
+        meta = ic.read_front_matter(ROOT / "examples" / "2026-11-03-robotics-lab-startup.md")
+        self.assertEqual(meta["label"], "Saturated")
 
 
 class Runs(unittest.TestCase):
@@ -129,7 +167,7 @@ class Runs(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             out = Path(d)
             self.assertEqual(ic.new_run_name(out, "2026-01-02", "x"), "2026-01-02-x")
-            (out / "2026-01-02-x.md").write_text("r", encoding="utf-8")
+            (out / "2026-01-02-x.html").write_text("r", encoding="utf-8")
             self.assertEqual(ic.new_run_name(out, "2026-01-02", "x"), "2026-01-02-x-2")
             (out / "notes" / "2026-01-02-x-2").mkdir(parents=True)
             self.assertEqual(ic.new_run_name(out, "2026-01-02", "x"), "2026-01-02-x-3")

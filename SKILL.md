@@ -24,7 +24,8 @@ package registries and GitHub; hardware leans on patents; services lean on
 local market and labor data; research leans on papers and preprints.
 
 Then check prior runs. List `checks/` in the skill directory and read the
-front matter of any file whose subject looks related. If a previous check
+metadata of any file whose subject looks related: the comment on the first
+lines of an `.html` report, or the YAML front matter of an older `.md` one. If a previous check
 covers overlapping ground, say so up front and name the file, then decide
 with the user whether to run fresh research or extend the earlier report.
 Repeating a check you already ran is the most common waste in this workflow.
@@ -134,23 +135,26 @@ the notes files beats a committee. Follow the "Synthesis rules" block in
 
 ## Output
 
-Three destinations, in this order. The file is the deliverable; the
-conversation gets a summary only.
+The report is an HTML page, not a markdown file. It is saved, published
+when the session can publish, and summarised in the conversation.
 
-### 1. The report file, always
+### 1. The report page, always
 
-Write the full report to `checks/YYYY-MM-DD-<slug>.md` in the skill
+Write the full report to `checks/YYYY-MM-DD-<slug>.html` in the skill
 directory, where `<slug>` is a short kebab-case name for the idea. Create
 `checks/` if it does not exist, and if that name is already taken today,
 append `-2`, `-3` and so on rather than overwrite the earlier report.
 `checks/` is git-ignored, because an idea being checked is usually private;
 leave it that way.
 
-The file follows the "Report format" block in
-`references/thread-prompts.md` exactly: YAML front matter (idea, slug,
-date, label, the three label reads, top occupants) so later runs can match
-against it without reading the body, then nine sections in a fixed order,
-under 1,500 words, no em dashes.
+Build the page from `references/report-template.html`, which carries all
+the CSS and the header. Fill its slots as the "Report page" section of
+`references/thread-prompts.md` describes, and write the content to the
+"Report format" block exactly: a metadata block (idea, title, slug, date,
+label, the three label reads, top occupants) that later runs match against
+without reading the body, then nine HTML sections in a fixed order, under
+1,500 words, no em dashes. Do not write a `.md` report, and do not add or
+change CSS; every report should look like the same publication.
 
 Section 8 is the roast: up to 300 words on why the idea is stupid. Be
 properly critical: least charitable reading, every weak point, no hedging,
@@ -160,19 +164,24 @@ It is the one place the report takes a side, it says so in its first line,
 and every jab in it must rest on a finding from the notes. Aim it at the
 idea, not at the user.
 
-### 2. The conversation summary, always
+### 2. The published artifact, whenever the session can publish
+
+If the session has a tool for publishing an artifact or page, publish the
+`.html` file with it as soon as it is written and give the user the link.
+This is how the report is meant to be read. The template is already in
+the form an artifact page takes, so publish the file as it is. Use the
+report's `title` as the page title. Published artifacts are private until
+the user shares them, so publish without asking.
+
+If no such tool exists, do not fail the run and do not fall back to
+markdown. The saved `.html` file is the report; tell the user it opens in
+any browser.
+
+### 3. The conversation summary, always
 
 Print the summary described in the "Conversation summary" block of
-`references/thread-prompts.md`, then the path to the report file. Nobody
-reads 1,500 words in a terminal.
-
-### 3. A shareable page, only if available
-
-If a tool for publishing an artifact or page exists in the session, also
-publish the report as a page and give the user the link. Treat this as
-optional. Never fail the run, and never withhold the file or the summary,
-because this tool is absent. It is absent in many Claude Code sessions,
-which is where this skill is usually installed.
+`references/thread-prompts.md`, then the artifact link if there is one and
+the path to the saved file. Nobody reads 1,500 words in a terminal.
 
 ## Known limits
 

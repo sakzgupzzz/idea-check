@@ -48,13 +48,19 @@ short extra request before the research starts.
    reader sees only the notes and the label definitions, never another
    reader's answer or a draft of the report. The three readers get
    differently worded prompts and the notes in a different order.
-4. Runs one synthesis pass that writes the report, then prints a summary
-   of at most 150 words. There is no critic or debate pass, by design (see
-   the top-level README). The runner then sets `slug`, `date`, `label` and
-   `label_reads` in the front matter itself, from the reads it parsed, so
-   those fields do not depend on the model copying them correctly.
+4. Runs one synthesis pass that writes the nine report sections as HTML,
+   then prints a summary of at most 150 words. There is no critic or
+   debate pass, by design (see the top-level README). The runner drops the
+   sections into `../references/report-template.html`, draws the label
+   scale, and sets `slug`, `date`, `label` and `label_reads` in the page's
+   metadata itself, from the reads it parsed, so those fields do not
+   depend on the model copying them correctly.
 
-Outputs go to `--out` (default `../checks`): the report at `<run>.md`, and
+The result is one self-contained `.html` page that opens in any browser.
+The runner cannot publish artifacts; that step belongs to the Claude Code
+skill.
+
+Outputs go to `--out` (default `../checks`): the report at `<run>.html`, and
 under `notes/<run>/` each thread's notes, each read, and a `run.json` with
 the idea and type. `<run>` is `YYYY-MM-DD-<slug>`, with `-2`, `-3` and so
 on appended when that name is taken, so a rerun never overwrites an
