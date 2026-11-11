@@ -56,6 +56,11 @@ short extra request before the research starts.
    metadata itself, from the reads it parsed, so those fields do not
    depend on the model copying them correctly.
 
+The model's HTML is not trusted. Before it goes into the page the runner
+rebuilds it from an allowlist: the tags and classes the template styles,
+`http(s)` links only, no scripts, styles, event handlers, images or
+frames. Text inside a removed tag is kept.
+
 The result is one self-contained `.html` page that opens in any browser.
 The runner cannot publish artifacts; that step belongs to the Claude Code
 skill.
@@ -84,6 +89,16 @@ run makes eight requests (nine when the type is inferred), four of them
 long and search-heavy; expect it to
 take several minutes and to cost a few dollars at Opus rates. Pass
 `--reader-model claude-sonnet-5-5` to make the three reads cheaper.
+
+## Tests
+
+`python -m unittest discover -s tests` from the repo root. The tests are
+offline: they run the whole flow (type inference, four threads, a paused
+turn, three reads, synthesis, a failed thread and `--resume`, the
+related-check stop) against a fake client, so they need neither the SDK
+nor a key. They do not prove the live API accepts the requests; the
+request parameters were checked against `anthropic` 1.1.0, the version
+`requirements.txt` asks for.
 
 ## Known limits
 

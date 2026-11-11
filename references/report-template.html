@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="claude:viewport-fit-sides" content="cover">
 <title>{TITLE}</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
 <style>
 /* Layout: one reading column. A three-stop occupancy scale in the header
    carries the label and shows each independent read as a numbered mark.
-   The roast is the only loud block on the page. */
+   The roast is the only loud block on the page.
+   Type: fonts already on the reader's machine, on purpose. A report about a
+   private idea should open offline and contact no other site. */
 :root {
   --bg: #f2f5f3;
   --surface: #fbfcfb;
@@ -23,9 +24,9 @@
   --roast-fg: #f5e8e1;
   --roast-muted: #c9aea2;
   --ember: #ff8a4c;
-  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
-  --font-body: "Source Serif 4", Georgia, "Times New Roman", serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --font-display: "Segoe UI Variable Display", "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  --font-body: Charter, "Bitstream Charter", "Iowan Old Style", Cambria, Georgia, serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -179,6 +180,15 @@ h2 {
 h3 { font-family: var(--font-display); font-weight: 500; font-size: 1.1rem; }
 ul, ol { padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
 blockquote { border-left: 3px solid var(--rule); padding-left: 1rem; color: var(--muted); }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.08em 0.3em;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+#roast code { border-color: var(--roast-muted); }
 
 .scroll { overflow-x: auto; }
 table {

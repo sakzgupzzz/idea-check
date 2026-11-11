@@ -127,7 +127,9 @@ shows the label on a three-stop scale with each independent read marked on
 it. In a session that can publish artifacts, the skill publishes the page
 and gives you the link; artifacts are private until you share them.
 Without that tool, the saved file opens in any browser. The conversation
-gets a summary of at most 150 words, the link and the file path.
+gets a summary of at most 150 words, the link and the file path. The page
+uses fonts already on your machine and loads nothing from other sites, so
+opening a report about a private idea contacts nobody.
 
 The first lines of each page carry a metadata comment (idea, title, slug,
 date, label, the three label reads, top occupants) so later runs can find
@@ -156,10 +158,11 @@ already run is the most common waste in this workflow.
   requirements.
 - `checks/`: one report page per idea you check. Created on first run and
   git-ignored.
-- `examples/`: two sample reports from 2026-11-03, an AI entertainment
-  startup and a robotics lab startup, both researched at category level.
-  They are in the older markdown format, from before the HTML page and
-  the roast.
+- `examples/`: sample reports from 2026-11-03, researched at category
+  level. `2026-11-03-robotics-lab-startup.html` shows what the skill
+  produces now: open it in a browser. It was converted from the markdown
+  report beside it, with the roast written at conversion. The two `.md`
+  files are the older format, from before the HTML page and the roast.
 - `tests/`: offline tests for the runner and the prompt file. Run them
   with `python -m unittest discover -s tests`; they also run in CI.
 - `LICENSE`: MIT.

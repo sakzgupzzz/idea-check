@@ -27,12 +27,14 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import html
 import json
 import re
 import sys
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
+from html.parser import HTMLParser
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -215,6 +217,83 @@ def _unfence(text: str) -> str:
     return re.sub(r"^```[a-z]*\n(.*)\n```$", r"\1", text.strip(), flags=re.S)
 
 
+SECTION_IDS = ("idea", "occupants", "graveyard", "economics", "floor",
+               "label", "conditions", "roast", "sources")
+ALLOWED_TAGS = frozenset("""
+    section h2 h3 p ul ol li strong em code a blockquote br
+    div span table thead tbody tr th td
+""".split())
+TAG_CLASSES = frozenset({"tag", "tag vendor", "tag indep", "tag falsified"})
+
+
+class _SectionSanitizer(HTMLParser):
+    """Rebuild the report sections from an allowlist.
+
+    The sections are model output that ends up in a page the user opens and
+    may publish, so nothing is trusted: unknown tags are dropped (their text
+    is kept), script and style are dropped with their content, and only the
+    few attributes the template styles survive. Links must be http(s).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.out: list[str] = []
+        self.dropping = 0
+
+    @staticmethod
+    def _attrs(tag: str, attrs: dict[str, str | None]) -> str:
+        if tag == "section" and attrs.get("id") in SECTION_IDS:
+            return f' id="{attrs["id"]}"'
+        if tag == "a":
+            href = (attrs.get("href") or "").strip()
+            if re.match(r"https?://", href, flags=re.I):
+                return f' href="{html.escape(href, quote=True)}"'
+        if tag == "div" and (attrs.get("class") or "").strip() == "scroll":
+            return ' class="scroll"'
+        if tag == "span":
+            cls = " ".join((attrs.get("class") or "").split())
+            if cls in TAG_CLASSES:
+                return f' class="{cls}"'
+        return ""
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("script", "style"):
+            self.dropping += 1
+        elif not self.dropping and tag in ALLOWED_TAGS:
+            self.out.append(f"<{tag}{self._attrs(tag, dict(attrs))}>")
+
+    def handle_startendtag(self, tag, attrs):
+        if not self.dropping and tag in ALLOWED_TAGS:
+            self.out.append(f"<{tag}{self._attrs(tag, dict(attrs))}>")
+            if tag != "br":
+                self.out.append(f"</{tag}>")
+
+    def handle_endtag(self, tag):
+        if tag in ("script", "style"):
+            self.dropping = max(0, self.dropping - 1)
+        elif not self.dropping and tag in ALLOWED_TAGS and tag != "br":
+            self.out.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        if not self.dropping:
+            self.out.append(data.replace("<", "&lt;").replace(">", "&gt;"))
+
+    def handle_entityref(self, name):
+        if not self.dropping:
+            self.out.append(f"&{name};")
+
+    def handle_charref(self, name):
+        if not self.dropping:
+            self.out.append(f"&#{name};")
+
+
+def sanitize_sections(markup: str) -> str:
+    parser = _SectionSanitizer()
+    parser.feed(markup)
+    parser.close()
+    return "".join(parser.out).strip()
+
+
 def parse_synthesis(text: str) -> tuple[dict[str, str], str, str]:
     """Split the synthesis reply into (metadata fields, sections HTML, summary)."""
     report, _, summary = text.partition(SUMMARY_MARK)
@@ -225,9 +304,7 @@ def parse_synthesis(text: str) -> tuple[dict[str, str], str, str]:
         fields = parse_fields(m.group(1))
         report = report[m.end():]
     sections = _unfence(report)
-    # The page is opened locally and may be published; it never needs script.
-    sections = re.sub(r"<script\b.*?</script>", "", sections, flags=re.S | re.I)
-    return fields, sections.strip(), summary.strip()
+    return fields, sanitize_sections(sections), summary.strip()
 
 
 def scale_html(labels: list[str]) -> str:
@@ -286,8 +363,10 @@ def read_front_matter(path: Path) -> dict[str, str]:
 # --------------------------------------------------------------------------
 
 def slugify(text: str, limit: int = 40) -> str:
-    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return s[:limit].rstrip("-") or "idea"
+    s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:limit].rstrip("-")
+    # An idea written entirely in another script has nothing to slug; give
+    # it a stable name of its own instead of a shared "idea".
+    return s or "idea-" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:6]
 
 
 def new_run_name(out: Path, today: str, slug: str) -> str:
@@ -413,7 +492,7 @@ def infer_type(client, model: str, idea: str) -> str:
 # Main
 # --------------------------------------------------------------------------
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, client=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("idea", nargs="?", help="the idea in plain English")
@@ -498,9 +577,12 @@ def main(argv: list[str] | None = None) -> int:
             log("Read it first. To run new research anyway, add --fresh.")
             return 3
 
-    import anthropic  # imported here so --dry-run works without the SDK
+    failures: tuple[type[Exception], ...] = (StageFailed, RuntimeError)
+    if client is None:
+        import anthropic  # imported here so --dry-run works without the SDK
 
-    client = anthropic.Anthropic()
+        client = anthropic.Anthropic()
+        failures += (anthropic.APIError,)
     resume = bool(args.resume)
 
     try:
@@ -571,7 +653,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
             max_tokens=args.max_tokens,
         )
-    except (StageFailed, RuntimeError, anthropic.APIError) as e:
+    except failures as e:
         if isinstance(e, StageFailed):
             for key, err in e.errors.items():
                 log(f"error: {key}: {err}")

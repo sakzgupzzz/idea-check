@@ -110,6 +110,19 @@ already lives in.
 Products in this space more often die to an incumbent adding the feature
 from above than to a startup competing head on, so name the most likely
 absorber explicitly and say how far along they already are.
+
+Once you have named the most likely absorber, audit it directly instead of
+relying on keyword search. Open its public GitHub organizations (including
+any labs, industry-solutions or open source orgs) and its changelog or
+release notes for the last 12 months, and read the repo and release lists
+themselves. Vendors describe feature-level tools in their own vocabulary,
+not the idea's, so searching the idea's keywords misses them. List every
+repo, accelerator or release that touches the idea's core task, with stars
+and last commit. If you could not open an org or a changelog, name it
+under "Not checked". Never write that the absorber does not do some part
+of the idea, or leaves it to partners, unless a primary source says so;
+write "found nothing, which is not the same as absent" and say what you
+read.
 ```
 
 ## Thread 3: graveyard and economics
@@ -257,6 +270,11 @@ Do not add a critic, red-team or debate pass.
 
 Mark vendor claims as such. Keep "found nothing, which is not the same as
 absent" wherever a thread said it, with what was not checked.
+
+Never state as fact that an occupant or incumbent lacks a capability
+unless the notes cite a primary source saying so. If the notes only failed
+to find it, write "found nothing" for that capability and name what was
+not checked. This applies to the "does not cover" column and to the roast.
 ```
 
 ## Report format
@@ -285,8 +303,8 @@ a page header or any CSS; the page template supplies those. The ids, in
 order: idea, occupants, graveyard, economics, floor, label, conditions,
 roast, sources.
 
-Inside a section use only p, ul, ol, li, h3, strong, em, a, blockquote and
-table. Wrap every table in <div class="scroll">. Write every URL as an
+Inside a section use only p, ul, ol, li, h3, strong, em, code, a,
+blockquote and table. Wrap every table in <div class="scroll">. Write every URL as an
 <a href> link. Label findings with <span class="tag vendor">vendor
 claim</span> or <span class="tag indep">independent</span>, and mark a
 falsified condition with <span class="tag falsified">already

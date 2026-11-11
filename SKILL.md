@@ -60,7 +60,10 @@ does not cover. The gaps are more useful than the list.
 Which established categories already solve this as a feature, and who would
 absorb it if it worked. This matters more than direct competitors. Products
 in this space more often die to an incumbent bundling the feature from above
-than to a startup competing head on. Name the most likely absorber.
+than to a startup competing head on. Name the most likely absorber. Once the
+absorber is named, the thread audits its GitHub orgs and changelog
+directly, because platform vendors name feature-level tools in their own
+vocabulary, not the idea's.
 
 ### 3. Graveyard and economics
 What has already been tried here and failed: shutdowns, acquisitions at low
@@ -194,3 +197,6 @@ State these in the report when they apply.
   vendors writing about each other.
 - The report says whether a space is occupied. It does not say whether this
   user can win, which depends on information the research cannot see.
+- Feature-level tools from platform vendors are named in the vendor's
+  vocabulary and are missed by idea-keyword search. The absorber audit
+  reduces this but does not remove it.

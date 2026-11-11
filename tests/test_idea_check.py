@@ -4,12 +4,17 @@ No network and no SDK needed:
     python -m unittest discover -s tests
 """
 
+import contextlib
+import io
+import json
 import re
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "api"))
@@ -80,6 +85,65 @@ class Prompts(unittest.TestCase):
             p.write_text("## Shared block\n\n```\nhello\n```\n", encoding="utf-8")
             with self.assertRaises(ic.PromptError):
                 ic.load_prompts(p)
+
+
+class PromptFileShape(unittest.TestCase):
+    """The runner takes the first fenced block under each heading and fills a
+    fixed set of placeholders. These fail if the files drift from that."""
+
+    def test_each_prompt_heading_has_exactly_one_fenced_block(self):
+        text = ic.PROMPTS_FILE.read_text(encoding="utf-8")
+        parts = re.split(r"^## +(.+?)[ \t]*$", text, flags=re.M)
+        fences = {h: len(re.findall(r"^```", body, flags=re.M)) // 2
+                  for h, body in zip(parts[1::2], parts[2::2])}
+        for heading in ic.SECTIONS:
+            self.assertEqual(fences.get(heading), 1, heading)
+
+    def test_prompts_use_only_known_placeholders(self):
+        blocks, _ = ic.load_prompts()
+        known = {"IDEA", "TYPE", "NOTES_DIR", "FILENAME", "LABEL_DEFINITIONS", "NOTES"}
+        for heading, block in blocks.items():
+            used = set(ic.PLACEHOLDER.findall(block))
+            self.assertLessEqual(used, known, heading)
+
+    def test_template_has_exactly_the_slots_the_runner_fills(self):
+        template = ic.TEMPLATE_FILE.read_text(encoding="utf-8")
+        self.assertEqual(set(ic.PLACEHOLDER.findall(template)),
+                         {"META", "TITLE", "IDEA", "DATE", "LABEL", "SCALE", "SECTIONS"})
+
+    def test_template_loads_nothing_from_other_sites(self):
+        template = ic.TEMPLATE_FILE.read_text(encoding="utf-8")
+        self.assertNotRegex(template, r"(?i)<link|<script|@import|url\(\s*['\"]?https?:")
+
+
+class Sanitizer(unittest.TestCase):
+    def test_hostile_markup_is_removed_and_text_kept(self):
+        out = ic.sanitize_sections(
+            '<section id="idea" onmouseover="x()"><h2>T</h2>'
+            '<p onclick="alert(1)" style="color:red">hi &amp; bye</p>'
+            '<iframe src="//evil">framed</iframe><img src=x onerror=alert(1)>'
+            '<script>alert(2)</script><style>p{display:none}</style>'
+            '<a href="javascript:alert(3)">bad</a> <a href="https://ok.example/a?b=1&amp;c=2">good</a>'
+            '</section>')
+        for gone in ("onclick", "onmouseover", "onerror", "style", "<iframe", "<img",
+                     "<script", "alert(2)", "display:none", "javascript:"):
+            self.assertNotIn(gone, out)
+        self.assertIn('<section id="idea"><h2>T</h2><p>hi &amp; bye</p>', out)
+        self.assertIn("framed", out)
+        self.assertIn("<a>bad</a>", out)
+        self.assertIn('<a href="https://ok.example/a?b=1&amp;c=2">good</a>', out)
+
+    def test_markup_the_template_styles_survives(self):
+        src = ('<section id="occupants"><h2>Who</h2><div class="scroll"><table><thead><tr>'
+               '<th>A</th></tr></thead><tbody><tr><td><strong>x</strong> <code>y</code> '
+               '<span class="tag vendor">vendor claim</span></td></tr></tbody></table></div>'
+               '<ol><li><em>one</em><br>two</li></ol><blockquote>q</blockquote><h3>s</h3></section>')
+        self.assertEqual(ic.sanitize_sections(src), src)
+
+    def test_unknown_ids_and_classes_are_dropped(self):
+        out = ic.sanitize_sections('<section id="x"><span class="tag evil">t</span>'
+                                   '<div class="other">d</div></section>')
+        self.assertEqual(out, "<section><span>t</span><div>d</div></section>")
 
 
 class Labels(unittest.TestCase):
@@ -160,7 +224,8 @@ class ReportPage(unittest.TestCase):
 class Runs(unittest.TestCase):
     def test_slugify(self):
         self.assertEqual(ic.slugify("An App, that does X!"), "an-app-that-does-x")
-        self.assertEqual(ic.slugify("!!!"), "idea")
+        self.assertRegex(ic.slugify("!!!"), r"^idea-[0-9a-f]{6}$")
+        self.assertNotEqual(ic.slugify("\u65e5\u672c\u8a9e"), ic.slugify("\u4e2d\u6587"))
         self.assertLessEqual(len(ic.slugify("word " * 50)), 40)
 
     def test_new_run_name_never_reuses_a_taken_name(self):
@@ -214,6 +279,147 @@ class DryRun(unittest.TestCase):
         self.assertIsNone(PLACEHOLDER.search(result.stdout))
         for needle in ("Thread 4: commodity floor", "Reader 3", "synthesis system prompt"):
             self.assertIn(needle, result.stdout)
+
+
+
+class _Stream:
+    def __init__(self, message):
+        self.message = message
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get_final_message(self):
+        return self.message
+
+
+class FakeClient:
+    """Stands in for anthropic.Anthropic(): answers each kind of request the
+    runner makes, records what was asked, and can fail or pause on demand."""
+
+    OPENERS = {
+        "prior-art": "Research who already ships",
+        "incumbents": "Research which established product categories",
+        "graveyard-economics": "Be adversarial toward the business case",
+        "commodity-floor": "Research how much of this idea",
+    }
+    SYNTHESIS = (
+        "---\nidea: turns meeting recordings into Jira tickets\ntitle: Meeting Ticket Tool\n"
+        "slug: model-slug\nlabel: Open\nlabel_reads: [Open, Open, Open]\n"
+        "top_occupants: [A, B, C]\n---\n"
+        '<section id="idea"><h2>The idea, as understood</h2><p>Body</p></section>\n'
+        "=== SUMMARY ===\nSaturated, all three reads agreed."
+    )
+
+    def __init__(self, fail=(), pause=()):
+        self.fail, self.pause = set(fail), set(pause)
+        self.calls, self.requests = [], []
+        self.lock = threading.Lock()
+        self.beta = SimpleNamespace(messages=SimpleNamespace(stream=self._stream))
+
+    def _kind(self, kw):
+        if kw.get("system"):
+            return "synthesis"
+        text = kw["messages"][0]["content"]
+        if kw.get("tools"):
+            return next(k for k, opener in self.OPENERS.items() if text.startswith(opener))
+        return "reader" if "<notes thread=" in text else "type"
+
+    def _stream(self, **kw):
+        kind = self._kind(kw)
+        with self.lock:
+            self.calls.append(kind)
+            # the runner appends to this list when it resumes, so snapshot it
+            self.requests.append({**kw, "messages": list(kw["messages"])})
+        if kind in self.fail:
+            raise RuntimeError("boom")
+        if kind in self.pause and len(kw["messages"]) == 1:
+            return _Stream(SimpleNamespace(stop_reason="pause_turn", stop_details=None,
+                                           content=[SimpleNamespace(type="text", text="partial")]))
+        text = {"synthesis": self.SYNTHESIS, "reader": "Saturated\nBecause of X.",
+                "type": "service"}.get(kind, f"## Findings\n\nNotes for {kind}.")
+        return _Stream(SimpleNamespace(stop_reason="end_turn", stop_details=None,
+                                       content=[SimpleNamespace(type="text", text=text)]))
+
+
+class WholeRun(unittest.TestCase):
+    """main() end to end against a fake client: no network, no SDK."""
+
+    def run_main(self, argv, client):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = ic.main(argv, client=client)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_full_run_writes_the_page_notes_and_reads(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            client = FakeClient(pause={"incumbents"})
+            code, stdout, stderr = self.run_main([IDEA, "--out", d], client)
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Saturated, all three reads agreed.", stdout)
+
+            (report,) = out.glob("*.html")
+            meta = ic.read_front_matter(report)
+            self.assertEqual(meta["label"], "Saturated")          # from the parsed reads,
+            self.assertEqual(meta["label_reads"], "[Saturated, Saturated, Saturated]")
+            self.assertNotEqual(meta["slug"], "model-slug")       # not from the model
+            self.assertIn('<section id="idea">', report.read_text(encoding="utf-8"))
+
+            notes = out / "notes" / report.stem
+            self.assertEqual(sorted(p.name for p in notes.iterdir()),
+                             ["commodity-floor.md", "graveyard-economics.md", "incumbents.md",
+                              "prior-art.md", "reader-1.md", "reader-2.md", "reader-3.md",
+                              "run.json"])
+            self.assertEqual(json.loads((notes / "run.json").read_text())["type"], "service")
+
+            # One request per step, plus one resume of the paused thread.
+            self.assertEqual(client.calls.count("incumbents"), 2)
+            self.assertEqual(len(client.calls), 1 + 4 + 1 + 3 + 1)
+            resumed = [r for r in client.requests if len(r["messages"]) == 2]
+            self.assertEqual(len(resumed), 1)
+            self.assertEqual(resumed[0]["messages"][1]["role"], "assistant")
+            for r in client.requests:
+                self.assertEqual(bool(r.get("tools")), r["output_config"]["effort"] == "high"
+                                 and not r.get("system"))
+
+    def test_a_failed_thread_keeps_the_rest_and_resume_finishes(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            code, _, stderr = self.run_main([IDEA, "--out", d, "--type", "service"],
+                                            FakeClient(fail={"prior-art"}))
+            self.assertEqual(code, 1)
+            self.assertIn("--resume", stderr)
+            self.assertEqual(list(out.glob("*.html")), [])
+            (notes,) = (out / "notes").iterdir()
+            self.assertEqual(sorted(p.stem for p in notes.glob("*.md")),
+                             ["commodity-floor", "graveyard-economics", "incumbents"])
+
+            client = FakeClient()
+            code, _, stderr = self.run_main(["--resume", str(notes)], client)
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(sorted(client.calls),
+                             ["prior-art", "reader", "reader", "reader", "synthesis"])
+            self.assertEqual([p.stem for p in out.glob("*.html")], [notes.name])
+
+    def test_a_related_earlier_check_stops_the_run_unless_fresh(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            self.assertEqual(self.run_main([IDEA, "--out", d], FakeClient())[0], 0)
+
+            client = FakeClient()
+            code, _, stderr = self.run_main([IDEA, "--out", d], client)
+            self.assertEqual(code, 3)
+            self.assertEqual(client.calls, [])
+            self.assertIn("--fresh", stderr)
+
+            self.assertEqual(self.run_main([IDEA, "--out", d, "--fresh"], FakeClient())[0], 0)
+            names = sorted(p.stem for p in out.glob("*.html"))
+            self.assertEqual(len(names), 2)
+            self.assertTrue(names[1].endswith("-2"), names)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,381 @@
+<!--idea-check
+idea: A venture-backed robotics lab building general-purpose robot learning plus the teleop data, simulation, evaluation and shared-lab infrastructure around it, used in-house or sold to other robotics companies
+title: Robotics Lab Startup
+slug: robotics-lab-startup
+date: 2026-11-03
+label: Saturated
+label_reads: [Saturated, Saturated, Saturated]
+top_occupants: [Physical Intelligence, NVIDIA Isaac GR00T, Scale AI]
+-->
+<meta charset="utf-8">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Robotics Lab Startup</title>
+<style>
+/* Layout: one reading column. A three-stop occupancy scale in the header
+   carries the label and shows each independent read as a numbered mark.
+   The roast is the only loud block on the page.
+   Type: fonts already on the reader's machine, on purpose. A report about a
+   private idea should open offline and contact no other site. */
+:root {
+  --bg: #f2f5f3;
+  --surface: #fbfcfb;
+  --ink: #15201d;
+  --muted: #586661;
+  --rule: #d2dad6;
+  --accent: #0d5f57;
+  --open: #2f7d4f;
+  --crowded: #a86a08;
+  --saturated: #b3372b;
+  --roast-bg: #1e1512;
+  --roast-fg: #f5e8e1;
+  --roast-muted: #c9aea2;
+  --ember: #ff8a4c;
+  --font-display: "Segoe UI Variable Display", "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  --font-body: Charter, "Bitstream Charter", "Iowan Old Style", Cambria, Georgia, serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101514;
+    --surface: #171e1d;
+    --ink: #e4ebe8;
+    --muted: #98a7a2;
+    --rule: #2a3533;
+    --accent: #6ccdc0;
+    --open: #6cc48d;
+    --crowded: #e0a94a;
+    --saturated: #f0796c;
+    --roast-bg: #261812;
+    --roast-fg: #f5e8e1;
+    --roast-muted: #c9aea2;
+    --ember: #ff9a62;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101514;
+  --surface: #171e1d;
+  --ink: #e4ebe8;
+  --muted: #98a7a2;
+  --rule: #2a3533;
+  --accent: #6ccdc0;
+  --open: #6cc48d;
+  --crowded: #e0a94a;
+  --saturated: #f0796c;
+  --roast-bg: #261812;
+  --roast-fg: #f5e8e1;
+  --roast-muted: #c9aea2;
+  --ember: #ff9a62;
+  color-scheme: dark;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+.report {
+  max-width: 44rem;
+  margin-inline: auto;
+  padding-block: 3rem 4rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 3rem;
+}
+.report > * { min-width: 0; }
+
+a { color: var(--accent); text-underline-offset: 0.15em; overflow-wrap: anywhere; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+p, ul, ol, blockquote, h1, h2, h3 { margin: 0; }
+
+/* Masthead */
+.masthead { display: flex; flex-direction: column; gap: 1.25rem; }
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2rem, 7vw, 3.25rem);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.idea { font-size: 1.2rem; line-height: 1.5; color: var(--muted); }
+
+.verdict {
+  --verdict: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.verdict[data-label="Open"] { --verdict: var(--open); }
+.verdict[data-label="Crowded"] { --verdict: var(--crowded); }
+.verdict[data-label="Saturated"] { --verdict: var(--saturated); }
+.verdict-label { display: flex; flex-direction: column; gap: 0.15rem; }
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.verdict-label strong {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  line-height: 1.1;
+  color: var(--verdict);
+}
+.scale {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+.stop { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.stop-open { --stop: var(--open); }
+.stop-crowded { --stop: var(--crowded); }
+.stop-saturated { --stop: var(--saturated); }
+.marks { display: flex; gap: 0.3rem; min-height: 1.5rem; align-items: flex-end; }
+.marks i {
+  font: 500 0.7rem/1.5rem var(--font-mono);
+  width: 1.5rem;
+  height: 1.5rem;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--stop);
+  color: var(--bg);
+}
+.bar { height: 0.5rem; border-radius: 2px; background: var(--stop); opacity: 0.25; }
+.stop.chosen .bar { opacity: 1; }
+.stop-name {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stop.chosen .stop-name { color: var(--ink); }
+.scale-note { font-size: 0.875rem; line-height: 1.45; color: var(--muted); }
+
+/* Sections */
+section { display: flex; flex-direction: column; gap: 1rem; }
+h2 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.5rem;
+  line-height: 1.2;
+  text-wrap: balance;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+h3 { font-family: var(--font-display); font-weight: 500; font-size: 1.1rem; }
+ul, ol { padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.5rem; }
+blockquote { border-left: 3px solid var(--rule); padding-left: 1rem; color: var(--muted); }
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.08em 0.3em;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+#roast code { border-color: var(--roast-muted); }
+
+.scroll { overflow-x: auto; }
+table {
+  width: 100%;
+  min-width: 34rem;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+th, td { text-align: left; vertical-align: top; padding: 0.6rem 0.75rem 0.6rem 0; border-bottom: 1px solid var(--rule); }
+th {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  line-height: 1.5;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  padding: 0 0.4em;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  color: var(--muted);
+  vertical-align: 0.1em;
+}
+.tag.vendor { color: var(--crowded); }
+.tag.indep { color: var(--accent); }
+.tag.falsified { color: var(--saturated); }
+
+/* The roast: dark in both themes, on purpose */
+#roast {
+  background: var(--roast-bg);
+  color: var(--roast-fg);
+  border-radius: 4px;
+  padding: clamp(1.25rem, 5vw, 2.25rem);
+}
+#roast h2 {
+  border-top: 0;
+  padding-top: 0;
+  font-size: clamp(1.75rem, 6vw, 2.5rem);
+  color: var(--ember);
+}
+#roast p:first-of-type em {
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+  color: var(--roast-muted);
+}
+#roast a { color: var(--ember); }
+#roast p:last-child { font-weight: 600; }
+
+#sources { font-size: 0.85rem; }
+#sources ul, #sources ol { gap: 0.3rem; }
+#sources a { font-family: var(--font-mono); font-size: 0.78rem; }
+
+footer {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  border-top: 1px solid var(--rule);
+  padding-top: 1rem;
+}
+</style>
+
+<main class="report">
+<header class="masthead">
+  <p class="kicker">idea-check / landscape report / <time>2026-11-03</time></p>
+  <h1>Robotics Lab Startup</h1>
+  <p class="idea">A venture-backed robotics lab building general-purpose robot learning plus the teleop data, simulation, evaluation and shared-lab infrastructure around it, used in-house or sold to other robotics companies</p>
+  <div class="verdict" data-label="Saturated">
+    <p class="verdict-label"><span class="eyebrow">Landscape label</span><strong>Saturated</strong></p>
+    <ol class="scale" aria-label="Where each of the three independent reads placed this idea">
+      <li class="stop stop-open"><span class="marks"></span><span class="bar"></span><span class="stop-name">Open</span></li>
+      <li class="stop stop-crowded"><span class="marks"></span><span class="bar"></span><span class="stop-name">Crowded</span></li>
+      <li class="stop stop-saturated chosen"><span class="marks"><i>1</i><i>2</i><i>3</i></span><span class="bar"></span><span class="stop-name">Saturated</span></li>
+    </ol>
+    <p class="scale-note">Each numbered mark is one independent read of the same research. The label says how occupied the space is. It does not say whether the idea will work.</p>
+  </div>
+</header>
+
+<section id="idea">
+<h2>The idea, as understood</h2>
+<p>A startup organized as a research lab, in the mold of Physical Intelligence or Skild, that trains general-purpose robot policies (vision-language-action models, humanoid or mobile manipulation) and builds the infrastructure around them: teleoperation data collection, simulation, policy evaluation, and physical lab space, used in-house and possibly sold to other robotics companies. Researched as a category, since the request named no specific wedge.</p>
+</section>
+
+<section id="occupants">
+<h2>Who is already there</h2>
+<p>Every sub-segment has a funded occupant, and the bundle itself is already being assembled by corporate parents.</p>
+<div class="scroll">
+<table>
+<thead><tr><th>Layer</th><th>Occupant</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Robot foundation model lab</td><td>Physical Intelligence ($600M at $5.6B, reported talks at $11B+), Skild AI (reported $1.4B at $14B+), Generalist ($400M), Figure ($1B+ at $39B)</td><td>Bloomberg, trade press, company releases</td></tr>
+<tr><td>Open model and sim stack</td><td>NVIDIA GR00T N1.7 (open weights), Isaac Sim and Lab (free for internal R&amp;D), Lab-Arena eval, Isaac Teleop</td><td>NVIDIA pages, GitHub</td></tr>
+<tr><td>Open training framework</td><td>Hugging Face LeRobot (28.7k stars), openpi (14.5k stars, Apache-2.0)</td><td>GitHub API</td></tr>
+<tr><td>Teleop data as a service</td><td>Scale AI (claims 100k+ hours, customers PI, Generalist, Dyna), XDOF ($70M raise, ~$50M ARR per TechCrunch), Mecka, Sensei, Ropedia</td><td>Scale page (vendor), TechCrunch (independent)</td></tr>
+<tr><td>Humanoid hardware</td><td>Unitree G1 at $13.5K list, 5,500+ humanoids shipped in 2025, 60% gross margin, IPO filed; 1X NEO $20,000 or $499/mo</td><td>Unitree pricing page, Caixin, 1X order page</td></tr>
+<tr><td>Shared lab space</td><td>MassRobotics (nonprofit), Circuit Launch ($275 to $1,200+/mo)</td><td>Vendor pages</td></tr>
+</tbody>
+</table>
+</div>
+<p>The model labs are the same thing. XDOF is closest to the "sell infrastructure to other labs" half. No single company bundles model, humanoid, data business and shared lab; the likely reason is that the buyers of robot data are the labs themselves, so a seller would supply its own competitors. Pricing for PI, Skild, Generalist, XDOF and Scale is unpublished.</p>
+<p>Google DeepMind and Hyundai are assembling the lab-plus-body-plus-facility bundle at corporate scale. NVIDIA gives the infrastructure layer away to sell GPUs. AWS RoboMaker, the one cloud attempt to sell robotics infrastructure, shut down in September 2025.</p>
+</section>
+
+<section id="graveyard">
+<h2>The graveyard</h2>
+<p>The pattern across fifteen years is consistent, and every entry is independently sourced.</p>
+<ul>
+<li><strong>Everyday Robots</strong> (Alphabet, closed 2023): the exact shape of this idea, shut after about seven years with no product. An ex-employee told Wired the team "couldn't decide if they were aiming for an advanced research project or a commercially viable product."</li>
+<li><strong>Vicarious</strong> ($250M raised): acquihired by Intrinsic, undisclosed sum. Intrinsic then lost its independence inside Google in 2026 with no disclosed revenue.</li>
+<li><strong>Covariant</strong> ($222M raised): ended as an Amazon reverse acquihire, reportedly below its last valuation. Its one buyer also builds its own robots.</li>
+<li><strong>Kindred</strong>: teleop plus learning, absorbed by Ocado, a customer that builds its own robots.</li>
+<li><strong>OpenAI robotics</strong>: disbanded in 2021 over data scarcity, restarted as a model supplier to Figure, 1X and PI.</li>
+<li><strong>Public comparables</strong>: Sarcos pivoted to software and still loses about $32M a year per its 10-K. Berkshire Grey went from a $2.2B SPAC to a $375M take-private.</li>
+</ul>
+<p>No independent robot-learning lab with a disclosed, recurring, arm's-length model or data license to a non-competing OEM was found.</p>
+</section>
+
+<section id="economics">
+<h2>The economics</h2>
+<p>The hard prices belong to incumbents. Unitree sells humanoids at $13.5K with a 60% gross margin and no model budget to recover. Agility's illustrative robots-as-a-service price is about $8,500 a month against a $125K bill of materials, which by the S-4's own assumptions needs roughly two full shifts of uptime to reach labor parity. The one buyer on record, GXO's CEO, said on the Q2 2026 call that 45 humanoid pilots have produced no ROI. Figure's BMW "fleet" was one robot off-shift per BMW's own spokesperson.</p>
+<p>On data, Figure plans to spend about $1B in a year on human data capture, so a startup selling data competes with the in-house collection of its own largest buyers. Teleop wage rates and vendor rate cards were not reachable. The segment that wants this (model labs) builds in-house; the segment that could pay for deployed robots reports no return yet.</p>
+</section>
+
+<section id="floor">
+<h2>The commodity floor</h2>
+<p>Roughly 80 to 90 percent of the stack is free. Policies: openpi, GR00T N1.7 and about fifteen VLAs inside LeRobot. Data: Open X-Embodiment, DROID, AgiBot World (1M trajectories). Simulation: MuJoCo, Genesis, Isaac Sim free for internal commercial R&amp;D. Hardware: SO-101 arm at a $230 bill of materials.</p>
+<p>The sellable delta is embodiment-matched proprietary data, a model that beats open baselines on real tasks, and third-party real-robot evaluation as a service. The first two are what the funded labs spend billions on. For the third the threads found nothing, which is not the same as absent; only academic RoboArena and an XDOF add-on surfaced, and Scale's eval offering was not checked.</p>
+</section>
+
+<section id="label">
+<h2>Landscape label</h2>
+<p>Three independent reads, each from the four notes files only:</p>
+<ul>
+<li><strong>Read 1: Saturated.</strong> Direct occupants at nine and ten figures, infrastructure bundled free by NVIDIA and Hugging Face, graveyard shows the segment cannot pay.</li>
+<li><strong>Read 2: Saturated.</strong> Same, adding that the only unoccupied slivers (priced eval-as-a-service, a robot-learning shared lab) are academic or nonprofit today.</li>
+<li><strong>Read 3: Saturated.</strong> Same, adding that no arm's-length recurring license to a non-competing OEM was found.</li>
+</ul>
+<p>No disagreement.</p>
+</section>
+
+<section id="conditions">
+<h2>What would have to be true</h2>
+<ol>
+<li><strong>A buyer exists who is not also a competitor.</strong> Settled by one signed, recurring, disclosed model or data contract with an OEM that has no in-house learning team. None found in fifteen years of comparables.</li>
+<li><strong>Deployed robots return money to someone.</strong> Settled by a 3PL or automaker disclosing ROI on a humanoid fleet. GXO's statement points the other way as of August 2026.</li>
+<li><strong>Proprietary data beats open data by enough to pay for collection.</strong> Settled by a head-to-head on a customer task against GR00T N1.7 or pi0.5 fine-tuned on open data.</li>
+<li><strong>Eval-as-a-service is a real business.</strong> The one sliver nobody has priced. Settled by three labs paying for blind real-robot evaluation. Cheap to test with letters of intent.</li>
+<li><strong>The lab stays independent long enough to matter.</strong> Every comparable was absorbed or shut; the pattern falsifies this unless there is revenue from day one.</li>
+</ol>
+<p>Limits: all four threads exhausted the search budget, several vendor pages were rate-limited, and Chinese state training facilities and Agility, Tesla and Apptronik contracts were not checked.</p>
+</section>
+
+<section id="roast">
+<h2>The roast</h2>
+<p><em>One-sided on purpose. This is the case against, at full volume, not the verdict.</em></p>
+<p>You want to start a research lab to compete with Physical Intelligence, which raised $600M and is reportedly in talks at $11 billion, using the business plan of Everyday Robots, which Alphabet funded for seven years and then shut with no product. Its own people could not decide whether it was a science project or a company. Neither can you.</p>
+<p>The stack you plan to build is 80 to 90 percent free. NVIDIA gives away the model, the simulator and the eval harness because it makes its money on the GPUs you will rent to run them. Hugging Face gives away the training framework. The arm costs $230 in parts. What is left to sell is proprietary data and a better model, which is the exact thing the funded labs are spending billions on, so good fucking luck out-collecting Figure's planned $1B a year on data capture.</p>
+<p>And who buys? The only people who want robot data are other robot labs. You would be an arms dealer whose every customer is also at war with you. In fifteen years nobody turned up one recurring, arm's-length licence to an OEM that does not build its own. Covariant raised $222M and ended as an Amazon acquihire. Vicarious raised $250M and got swallowed. Kindred was eaten by its own customer. That is not a graveyard, it is a digestive tract.</p>
+<p>Sell the robots instead? GXO ran 45 humanoid pilots and reported no ROI. Figure's BMW "fleet" was one robot working the off-shift. Unitree will sell you a humanoid for $13.5K at a 60 percent margin with no model budget to recover.</p>
+<p>The one sliver nobody has priced is evaluation as a service, which is a consulting gig. Everything else here is a very expensive way to become somebody's acquihire, and that is the good ending.</p>
+</section>
+
+<section id="sources">
+<h2>Sources, and sources discarded</h2>
+<p>Cited: pi.website; Bloomberg Law (PI round); SiliconANGLE (Skild, Generalist); figure.ai; GitHub API for lerobot, openpi, Isaac-GR00T, Genesis, SO-ARM100; nvidia.com Isaac GR00T; deepmind.google; scale.com/robotics; techcrunch.com (XDOF, Intrinsic); fortune.com (Mecka, Figure/BMW); unitree.com/g1; caixinglobal.com; 1x.tech; circuitlaunch.com; massrobotics.org; therobotreport.com (Everyday Robots, RoboMaker, Atlas); geekwire.com (Covariant); venturebeat.com; sec.gov Palladyne 10-K; spacinsider.com; dynamo.vc (Agility S-4); beri.net (GXO call); Isaac Sim license FAQ; arXiv 2410.24164, 2503.14734, 2310.08864, 2403.12945, 2506.18123. Full URLs are in the four notes files.</p>
+<p>Discarded, roughly a third to 45 percent of about 500 result links: programmatic funding trackers (dealroom mirrors, defillama, getlatka, seedtable), AI-rewritten aggregators (pulse.bot, getcoai, hyper.ai, runtimewire), vendor listicles (labellerr), Wikipedia mirrors, syndicated rewrites of Wired and Business Insider stories, pricing sites (usagepricing, thepricer), and blogs restating Figure and Agility claims.</p>
+<p><em>This sample was converted from the markdown report of 2026-11-03. The roast was written at conversion, from the findings above; the original run predates that section, which is also why its sources are listed by name and not as links.</em></p>
+</section>
+
+<footer>Made with idea-check. Evidence and conditions, not a verdict.</footer>
+</main>

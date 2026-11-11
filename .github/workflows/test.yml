@@ -14,3 +14,4 @@ jobs:
           python-version: "3.12"
       # The tests are offline and need neither the SDK nor an API key.
       - run: python -m unittest discover -s tests -v
+      - run: python -m pip install --quiet pyflakes && python -m pyflakes api tests
