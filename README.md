@@ -66,10 +66,12 @@ exclude listicles, "best tools" roundups, programmatic pricing sites, and
 market-sizing sellers; and label each finding as a vendor claim or
 independent evidence.
 
-The first of those is the highest-value instruction in the skill. In
-published measurements, framing a research task toward confirmation rather
-than falsification shifts conclusions by 34 to 66 percentage points. That
-makes the framing a correctness issue, not a tone choice.
+The first of those is the highest-value instruction in the skill. In a
+study of LLM data-analysis agents, switching the analyst's persona from
+the most skeptical to the most confirmation-seeking moved the share of
+analyses that supported the hypothesis by 34 to 66 percentage points
+across datasets [1]. That makes the framing a correctness issue, not a
+tone choice.
 
 ## Why the verdict is not a verdict
 
@@ -77,22 +79,24 @@ The report ends with a landscape label (Open, Crowded, or Saturated) and a
 "what would have to be true" section instead of a will-work or won't-work
 call. Three reasons.
 
-**Single-pass verdicts are unstable.** Benchmarked novelty judgments swing
-from 93.5 to 40.9 percent accuracy on prompt rewording alone. A confident
-yes or no from one pass is mostly a function of how the question was
-phrased. So the skill runs the label three times in independent subagents
+**Single-pass verdicts are unstable.** In a benchmark of LLM novelty
+judges, deleting one sentence from the prompt took one model's pairwise
+accuracy from 93.5 to 40.9 percent on the same pairs [2]. A confident yes
+or no from one pass depends heavily on how the question was phrased. So the skill runs the label three times in independent subagents
 that see only the research notes, and reports all three. The three readers
 are asked the same question in different words and are given the notes in
 a different order, so a label that all three reach did not hinge on the
 phrasing; three copies of one prompt would only differ by chance. Disagreement is
 shown, not averaged, because the disagreement is the most informative line
-in the report. A cheap three-call vote also outperformed purpose-built
-single-pass tools costing twelve times more.
+in the report. In the same benchmark, the cheapest prompted setup, three
+calls per decision, outscored two purpose-built novelty tools that cost
+about 12 and 32 times more [2].
 
 **Debate layers make it worse.** It is tempting to add a critic or red-team
-agent over the synthesis. Published results show multi-agent debate
-underperforms a single strong pass and degrades accuracy in most tested
-configurations, so the skill forbids it.
+agent over the synthesis. In one evaluation, no multi-agent debate method
+beat plain chain-of-thought in more than 20 percent of 36 model and
+benchmark pairings [3], and another found debate can leave answers worse
+than a single agent's [4]. So the skill forbids it.
 
 **The research cannot see whether you can win.** It can see whether the
 space is occupied. Whether you specifically beat the occupants depends on
@@ -166,6 +170,32 @@ already run is the most common waste in this workflow.
 - `tests/`: offline tests for the runner and the prompt file. Run them
   with `python -m unittest discover -s tests`; they also run in CI.
 - `LICENSE`: MIT.
+
+## Sources
+
+Each figure above was checked against the paper itself. They come from
+single studies with specific setups, so read them as support for the
+design, not as general laws.
+
+1. Bertran, Fogliato and Wu (2026), "Many AI Analysts, One Dataset:
+   Navigating the Agentic Data Science Multiverse".
+   https://arxiv.org/abs/2602.18710 . The 34 to 66 point range is the gap
+   in support rate between the most skeptical and most
+   confirmation-seeking analyst personas, across three datasets.
+2. Sternlicht, Shahid, Jansen, Weld, Siangliulue and Hope (2026), "Old
+   Ideas, Novel Problems: The Instability of LLM-Based Novelty
+   Evaluation". https://arxiv.org/abs/2610.02022 . 93.5 and 40.9 are one
+   judge's pairwise accuracy under two prompts (Figure 4b, human versus
+   generated pairs); the dropped sentence told the judge that reviewers
+   had found one idea novel, so the prompts differ in information as well
+   as wording. The cost multiples are computed from the paper's Table 5;
+   the paper itself says "up to 32×".
+3. Zhang et al. (2025), "Stop Overvaluing Multi-Agent Debate".
+   https://arxiv.org/abs/2502.08788 . The baselines are chain-of-thought
+   and self-consistency on the same model.
+4. Wynn, Satija and Hadfield (2025), "Talk Isn't Always Cheap:
+   Understanding Failure Modes in Multi-Agent Debate".
+   https://arxiv.org/abs/2509.05396 .
 
 ## Known limits
 

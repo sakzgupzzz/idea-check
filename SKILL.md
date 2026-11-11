@@ -88,10 +88,11 @@ absent" and list what it did not check, to give a source URL for every
 claim, to exclude and name SEO-grade sources, and to separate vendor claims
 from independent evidence.
 
-Its first line is the highest-value line in this skill. Framing a research
-task toward confirmation rather than falsification shifts conclusions by 34
-to 66 percentage points in published measurements. That makes the framing a
-correctness requirement, not a tone preference. A thread told to check
+Its first line is the highest-value line in this skill. In a study of LLM
+analysis agents, a confirmation-seeking persona and a skeptical one differed
+by 34 to 66 percentage points in how often they supported the hypothesis
+(arXiv:2602.18710). That makes the framing a correctness requirement, not a
+tone preference. A thread told to check
 whether a space is empty will report it empty.
 
 The "found nothing" phrase exists because absence of evidence is weak here.
@@ -123,16 +124,18 @@ as written.
 
 Report all three labels and show any disagreement. Do not average, and do
 not pick a winner by majority in the prose; let the reader see the split.
-Benchmarked novelty verdicts swing from 93.5 to 40.9 percent accuracy on
-prompt rewording alone, and a three-call vote outperformed purpose-built
-single-pass tools costing twelve times more. Disagreement between the reads
+In a benchmark of LLM novelty judges, deleting one sentence from the prompt
+took a model from 93.5 to 40.9 percent accuracy, and a three-call prompted
+setup outscored purpose-built tools costing 12 to 32 times more
+(arXiv:2610.02022). Disagreement between the reads
 is the single most informative line in the report.
 
 ### No critic layer
 
-Do not add a critic, red-team, or debate agent over the synthesis. Published
-results show multi-agent debate underperforms a single strong pass and
-degrades accuracy in most configurations tested. One careful synthesis from
+Do not add a critic, red-team, or debate agent over the synthesis. In one
+evaluation no multi-agent debate method beat plain chain-of-thought in more
+than 20 percent of the pairings tested (arXiv:2502.08788), and debate can
+leave answers worse than a single agent's (arXiv:2509.05396). One careful synthesis from
 the notes files beats a committee. Follow the "Synthesis rules" block in
 `references/thread-prompts.md`.
 
